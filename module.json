@@ -1,0 +1,56 @@
+{
+    
+    "id": "sf2-pdf-en-import",
+
+    "title": "Deidril's Starfinder 2 PDF Import",
+    "description": "Imports some pdfs for starfinder 2 into foundry",
+    "authors": [
+      {
+        "name": "Deidril",
+        "discord": "Deidril#2009",
+        "url": "https://github.com/deidril",
+        "email": "fmanisse@gmail.com",
+        "patreon": "https://www.patreon.com/deidril",
+        "flags": {}
+      }
+    ],
+    "version": "5.01",
+  "compatibility": {
+    "minimum": "13.345",
+    "verified": "13.345",
+    "maximum": "13.999"
+  },
+  "styles": [
+    "css/common/dialogs.css", "css/common/helyx.css", "css/common/helyx-conversions.css", "css/common/helyx-sections.css", 
+    "css/common/summary.css",
+    "css/pdfs/adventures.css", "css/pdfs/bounties.css", "css/pdfs/pfs3.css", "css/pdfs/pfs4.css",
+    "css/pf2e/statblock.css", "css/pf2e/system.css"
+  ],
+    "relationships": {
+        "systems": 
+        [
+           { "id": "pf2e", "type": "system", "compatibility": { "minimum": "7.3", "verified": "7.3" } }
+        ],
+        "requires": 
+        [
+            { "id": "sf2e-anachronism", "type": "module", "compatibility": { "verified": "0.9" } }
+        ]
+    },
+    "esmodules": [
+      "src/helyx.bundle.js"
+    ],
+
+    "packs": 
+    [ ],
+
+    "languages": 
+    [
+      { "lang": "fr", "name": "Français", "path": "lang/fr.json", "flags": {} },
+      { "lang": "en", "name": "English",  "path": "lang/en.json", "flags": {}
+      }
+    ],
+
+    "url": "https://github.com/deidril/sf2-pdf-en-import",
+    "manifest": "https://github.com/deidril/sf2-pdf-en-import/releases/download/5.23/module.json",
+    "download": "https://github.com/deidril/sf2-pdf-en-import/releases/download/5.23/sf2-pdf-en-import-5.23.zip"
+  }
