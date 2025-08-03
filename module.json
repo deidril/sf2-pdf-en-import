@@ -20,17 +20,20 @@
     "verified": "13.345",
     "maximum": "13.999"
   },
-    "styles":     
-    [
-        "css/common/dialogs.css","css/common/summary.css",
-        "css/sfrpg/system.css", "css/sfrpg/statblock.css", "css/sfrpg/blocks.css",
-        "css/sfrpg/starfinder-dark-ui.css",
-        "css/helyx/helyx-sections.css","css/helyx/helyx.css"
-    ],
+  "styles": [
+    "css/common/dialogs.css", "css/common/helyx.css", "css/common/helyx-conversions.css", "css/common/helyx-sections.css", 
+    "css/common/summary.css",
+    "css/pdfs/adventures.css", "css/pdfs/bounties.css", "css/pdfs/pfs3.css", "css/pdfs/pfs4.css",
+    "css/pf2e/statblock.css", "css/pf2e/system.css"
+  ],
     "relationships": {
         "systems": 
         [
            { "id": "pf2e", "type": "system", "compatibility": { "minimum": "7.3", "verified": "7.3" } }
+        ],
+        "requires": 
+        [
+            { "id": "sf2e-anachronism", "type": "module", "compatibility": { "verified": "0.9" } }
         ]
     },
     "esmodules": [
@@ -38,23 +41,7 @@
     ],
 
     "packs": 
-    [
-      { 
-        "name": "deid-sfrpg-actors", "label": "Actors", "system": "pf2e", 
-        "path": "packs/actors", "type": "Actor", "ownership": 
-        { "PLAYER": "NONE", "TRUSTED": "NONE", "ASSISTANT": "NONE", "GAMEMASTER": "OWNER" }, 
-        "flags": {}
-      } 
-    ],
-    "packFolders": 
-    [{
-        "name": "Deidril Imports",
-        "sorting": "m",
-        "packs":
-        [
-          "deid-sfrpg-actors"
-        ]
-    }],
+    [ ],
 
     "languages": 
     [
@@ -65,5 +52,5 @@
 
     "url": "https://github.com/deidril/sf2-pdf-en-import",
     "manifest": "https://github.com/deidril/sf2-pdf-en-import/releases/download/5.23/module.json",
-    "download": "https://github.com/deidril/sf2-pdf-en-import/releases/download/5.23/sfrpg-pdf-en-import-5.23.zip"
+    "download": "https://github.com/deidril/sf2-pdf-en-import/releases/download/5.23/sf2-pdf-en-import-5.23.zip"
   }
