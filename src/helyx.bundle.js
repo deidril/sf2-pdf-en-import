@@ -15633,10 +15633,6 @@ var pdfjs = pdf;
 
 export default pdfjs;
 
-//
-// The code below is not licenced.
-// Only personal use is allowed : no sharing, no derivative, no commercial use.
-//
 
 export class Deidril_COMPENDIUM_ART_API
 {
@@ -18639,6 +18635,12 @@ export class HelyxPdfPosition
     /// @brief      Height of the rectangle
     #height = NaN;
 
+    /// @brief      External data source from a filename
+    #filename = null;
+
+    /// @brief      Expected size of the data source
+    #size = NaN;
+
     /** @} **/ /*****************************************************************/
     /** \name   Constructors
     **/ /** @{ ******************************************************************/
@@ -18667,6 +18669,10 @@ export class HelyxPdfPosition
     get y()      { return this.#y; }
     get width()   { return this.#width;  }
     get height()  { return this.#height; }
+    get w()   { return this.#width;  }
+    get h()  { return this.#height; }
+    get filename() { return this.#filename; }
+    get size() { return this.#size; }
 
     set(attribute_, value_)
     {
@@ -18678,6 +18684,8 @@ export class HelyxPdfPosition
             case 'y' : this.#y = value_; break;
             case 'w' : case 'width': this.#width = value_; break;
             case 'h' : case 'height': this.#height = value_; break;
+            case 'filename': this.#filename = value_; break;
+            case 'size': this.#size = value_; break;
             default: throw "Unimplemented attribute '" + attribute_ + "' in HelyxPdfPosition";
         }
     }      
@@ -18690,14 +18698,107 @@ export class HelyxPdfPosition
 
     write(output_)
     {
-        let atts = ['page']; 
+        let atts = []; 
+
+        if(this.#page >= 0) atts.push('page');
         if(this.#index >= 0) atts.push('index');
         if(this.is_xy()) atts.push('x', 'y');
-        if(!isNaN(this.#width)) atts.push('width');
-        if(!isNaN(this.#height)) atts.push('height');
+        if(!isNaN(this.#width)) atts.push('w');
+        if(!isNaN(this.#height)) atts.push('h');
+        if(this.#size) atts.push('size');
+        if(this.#filename) atts.push('filename');
+
         return output_.inlined_attributes(this,  atts);
     }   
 
+}
+export class HelyxFont
+{
+    /****************************************************************************/
+    /** \name   Private data members
+    **/ /** @{ ******************************************************************/
+
+    /// @brief      Position of the font, current index
+    #position      = null;
+
+    /// @brief      Position of the font, page x y pdf position
+    #src            = null;    
+
+    /// @brief      Font flags
+    #flags         = null;
+
+    /// @brief     Font roles
+    #roles          = null;
+
+    /// @brief     Font glyphs map
+    #glyphs          = null;
+
+    /// @brief     Font index ?
+    #index          = null;
+
+    /// @brief     If true, skip all content usign this font
+    #skip           = false;
+
+    /** @} **/ /*****************************************************************/
+    /** \name   Constructors
+    **/ /** @{ ******************************************************************/
+
+    constructor(data_ = {})
+    {
+        Object.keys(data_).forEach
+        (
+            key_ => { this.set(key_, data_[key_]); }
+        );
+    }    
+
+    /** @} **/ /*****************************************************************/
+    /** \name   Getters, setters
+    **/ /** @{ ******************************************************************/
+
+    get position()          { return this.#position; }
+    get src()               { return this.#src; }
+    get flags()             { return this.#flags; }
+    get roles()             { return this.#roles; }
+    get glyphs()            { return this.#glyphs; }
+    get index()             { return this.#index; }
+    get skip()              { return this.#skip; }
+
+    set(attribute_, value_)
+    {
+        switch(attribute_)
+        {
+            case 'src'    :
+                if(value_ instanceof HelyxPdfPosition)
+                { this.#src = value_; }
+                else    
+                { this.#src = Deid.build(HelyxPdfPosition, value_);  }
+                break;                
+            case 'position'    : this.#position = value_; break;
+            case 'flags'       : this.#flags = value_; break; 
+            case 'roles'       : this.#roles = value_; break; 
+            case 'glyphs'      : this.#glyphs = value_; break; 
+            case 'index'       : this.#index = value_; break;
+            case 'skip'        : this.#skip = value_; break;
+
+            default: throw "Unimplemented attribute '" + attribute_ + "' in HelyxFont";
+        }
+    }     
+
+    /** @} **/ /*****************************************************************/
+    /** \name   Custom Serialization
+    **/ /** @{ ******************************************************************/
+
+    inlined() { return true; }
+
+    write(output_)
+    {
+        output_.field('src',this.#src);
+
+        let attributes = [ 'position','flags', 'roles', 'glyphs', 'index' ];
+        if(this.#skip == true) { attributes.push('skip'); }
+        
+        output_.inlined_attributes(this,  attributes);
+    }       
 }
 export class HelyxContent 
 {
@@ -18777,8 +18878,43 @@ export class HelyxContent
     /** \name   Static methods
     **/ /** @{ ******************************************************************/    
 
+    static split_pf2_tags(str) 
+    {
+
+        let results =[];
+        let args = str.substr(0, str.length-3).substr(11).split(" ");
+
+        for(let i = 0; i < args.length; i += 2)
+        {
+            let index = parseInt(args[i]);
+            let tag = args[i + 1];
+
+            if(tag.startsWith("'") && tag.endsWith("'"))
+            { tag = tag.substring(1, tag.length - 1); }
+            if(tag.startsWith('"') && tag.endsWith('"'))
+            { tag = tag.substring(1, tag.length - 1); }
+
+            results.push(`{{{pf2tags ${index} '${tag}'}}}`);
+        }
+
+        return results;
+    }
+
     static from_raw(value_)
     {
+        if(Deid.is_string(value_) && value_.startsWith("{{{pf2tags") && value_.endsWith("}}}") )
+        {
+            let parts = HelyxContent.split_pf2_tags(value_);
+            let contents = [];
+            for(let part of parts)
+             {
+                const content = new HelyxContentInstruction();
+                content.parse(part);
+                contents.push(content);
+            }
+            return contents;
+        }
+
         let parts = value_.split(/(\{\{\{[\s\S]*?\}\}\}|\{\{[\s\S]*?\}\})/g);
         parts = parts.filter(part => part !== '');
         const contents = parts.map(part => {
@@ -18827,7 +18963,13 @@ export class HelyxContentInstruction
     /// @brief      Position in the pdf (page + index or x/y + with + height)
     #src            = null;
 
-    /// @brief      Raw content
+    /// @brief      Compendium
+    #compendium     = null;
+
+    /// @brief      Target idname
+    #target         = null;
+
+    /// @brief      Raw content, or name of an entry in the compendium
     #raw            = null;
 
     /// @brief      Length 
@@ -18875,6 +19017,7 @@ export class HelyxContentInstruction
 
     get from_slice()        { return this.#from_slice; }
     get slice_length()     { return this.#slice_length; }
+    get target()           { return this.#target; }
     
     set(attribute_, value_)
     {
@@ -18895,6 +19038,7 @@ export class HelyxContentInstruction
 
             case 'from_slice' : this.#from_slice = value_; break;
             case 'slice_length' : this.#slice_length = value_; break;
+            case 'target' : this.#target = value_; break;
     
             default: throw "Unimplemented attribute '" + attribute_ + "' in HelyxContentInstruction";
         }
@@ -18935,7 +19079,7 @@ export class HelyxContentInstruction
             case 'xlf': case 'pxlf': case 'sbxlf':
                 res += " " + this.#src.index + " " + this.#length + " '" + this.#flags.tos() +"'";
                 break;
-            case 'xf':
+            case 'xf': case 'pxf':
                 res += " " + this.#src.index + " '" + this.#flags.tos() +"'";
                 break;    
             case 'xl': case 'pxl':
@@ -18953,6 +19097,25 @@ export class HelyxContentInstruction
             case 'slicexylf':
                 res += " " + this.#src.page + " " + this.#src.x + " " + this.#src.y + " " + this.#length + " '" + this.#flags.tos() +"' " + this.#from_slice + " " + this.#slice_length;
                 break;    
+            case 'packlnk': 
+                res += " '" + this.#compendium + "' '" + this.#raw + "'";
+                break;
+            case 'lnk':
+                res += " '"   + this.#raw + "' '" + this.#target + "'";
+                break;  
+            case 'helyx':
+                res += " '" + this.#raw + "' " + this.#length;
+                break;           
+            case 'hr':
+                break;    
+            case 'pf2tags':
+                res += " " + this.#src.index + " '" + this.#raw + "'";
+                break;
+            case 'xytags':
+                res += " " + this.#src.page + " " + this.#src.x + " " + this.#src.y + " '" + this.#raw + "'";
+                break;
+           
+    
             default:
                 throw "Unimplemented content type '" + this.#op + "'";
         }
@@ -18993,7 +19156,10 @@ export class HelyxContentInstruction
         }
 
         value_ = this.extract_handlebar_content(value_);
-        let components = value_.split(' ');
+
+        let components = value_.match(/(?:[^\s']+|'[^']*')+/g)
+            .map(arg => arg.replace(/^'|'$/g, ""));
+        //let components = value_.split(' ');
         if(components.length == 0)
         {
             this.#op = "null";
@@ -19002,7 +19168,22 @@ export class HelyxContentInstruction
 
         switch(components[0])
         {
-            case 'xlf': case 'sbxlf':
+            case 'pf2tags':
+            {
+                this.#op = components[0];
+                this.#src = new HelyxPdfPosition({index: parseInt(components[1])});
+                this.#length = 1;
+                this.#raw = components[2];
+                break;
+            }
+            case 'xytags':
+            {
+                this.#op = components[0];
+                this.#src = new HelyxPdfPosition({page: parseInt(components[1]), x: parseInt(components[2]), y: parseInt(components[3])});
+                this.#raw = components[4];
+                break;
+            }
+            case 'xlf': case 'sbxlf': case 'pxlf':
             {
                 if(components.length != 4)
                 { throw "Invalid xlf handlebar format: " + value_; }
@@ -19016,17 +19197,17 @@ export class HelyxContentInstruction
             case 'xl': case 'pxl':
             {
                 if(components.length != 3)
-                { throw "Invalid xl handlebar format: " + value_; }
+                { throw "Invalid xl handlebar format: '" + value_ + "'"; }
                 this.#op = components[0];
                 this.#src = new HelyxPdfPosition({index: parseInt(components[1])});
                 this.#length = parseInt(components[2]);
                 break;
             }
-            case 'xf' :
+            case 'xf' : case 'pxf': 
             {
                 if(components.length != 3)  
                 { throw "Invalid xf handlebar format: " + value_; }
-                this.#op = "xf";
+                this.#op = components[0];
                 this.#src = new HelyxPdfPosition({index: parseInt(components[1])});
                 this.#length = 0;
                 this.#flags = new HelyxTextOptions(components[2]);
@@ -19077,7 +19258,7 @@ export class HelyxContentInstruction
                 this.set('flags', components[4]);
                 break;
             }
-            case 'xylf': case 'sbxylf':
+            case 'xylf': case 'sbxylf': case 'pxylf':
             {
                 if(components.length != 6)
                 { throw "Invalid xylf handlebar format: " + value_; }
@@ -19085,6 +19266,42 @@ export class HelyxContentInstruction
                 this.set('src', { page: parseInt(components[1]), x: parseInt(components[2]), y: parseInt(components[3]) });
                 this.#length = parseInt(components[4]);
                 this.set('flags', components[5]);
+                break;
+            }
+            case 'packlnk': 
+            {
+                this.#op = "packlnk";
+                if(components.length != 3)
+                { throw "Invalid packlnk handlebar format: " + value_; }
+                this.#compendium = components[1];
+                this.#raw = components[2];
+                break;
+            }
+            case 'lnk':
+            {
+                this.#op = "lnk";
+                if(components.length != 3)
+                { throw "Invalid lnk handlebar format: " + value_; }
+                this.#raw = components[1];
+                this.#target = components[2];
+                break;
+            }
+            case 'helyx':
+            {
+                this.#op = "helyx";
+                if(components.length != 3)
+                { throw "Invalid helyx handlebar format: " + value_; }
+
+                this.#raw = components[1];
+                this.#length = parseInt(components[2]);
+                break;
+
+            }
+            case 'hr':
+            {
+                this.#op = "hr";
+                if(components.length != 1)
+                { throw "Invalid hr handlebar format: " + value_; }
                 break;
             }
             default:
@@ -19207,6 +19424,9 @@ export class HelyxSourceSystem
     /// @brief      Template type
     #template = null;
 
+    /// @brief      Includes files
+    #includes = null;
+
     /** @} **/ /*****************************************************************/
     /** \name   Constructors
     **/ /** @{ ******************************************************************/
@@ -19229,6 +19449,7 @@ export class HelyxSourceSystem
     get compendium() { return this.#compendium; }
     get name()       { return this.#name; }
     get ref()        { return this.#ref; }
+    get includes()   { return this.#includes; }
 
 
     set(attribute_, value_)
@@ -19241,6 +19462,7 @@ export class HelyxSourceSystem
             case 'compendium' : this.#compendium = value_; break;
             case 'name' : this.#name = value_; break;
             case 'ref'  : this.#ref = value_; break;
+            case 'includes' : this.#includes = value_; break;
             default: throw "Unimplemented attribute '" + attribute_ + "' in HelyxSourceSystem ";
         }
     }
@@ -19253,7 +19475,8 @@ export class HelyxSourceSystem
 
     write(output_)
     {
-        return output_.inlined_attributes(this,  [ 'name', 'type', 'template', 'compendium', 'ref']);
+
+        return output_.inlined_attributes(this,  [ 'name', 'type', 'template', 'compendium', 'ref', 'includes']);
     }
 
 }
@@ -19799,6 +20022,7 @@ export class HelyxImageTransformation
 
     get flip()        { return this.#flip; }
     get rotation  ()     { return this.#rotation; }
+    get empty() { return this.#flip === null && this.#rotation === null; }
 
     set(attribute_, value_)
     {
@@ -19892,7 +20116,13 @@ export class HelyxToken
     **/ /** @{ ******************************************************************/
 
     /// @brief      Position in the source image of the token area
-    #from = null;
+    #x = null;
+
+    #y = null;
+
+    #width = null;
+
+    #height = null;
 
     /// @brief      Idname of the token
     #idname = null;
@@ -19902,6 +20132,12 @@ export class HelyxToken
 
     /// @brief      Model to use to produce the token
     #model = null;
+
+    ///@brief       Background color
+    #background = null;
+
+    ///@brief       Shape
+    #shape = null;
 
     /** @} **/ /*****************************************************************/
     /** \name   Constructors
@@ -19919,23 +20155,46 @@ export class HelyxToken
     /** \name   Getters, setters
     **/ /** @{ ******************************************************************/
 
-    get from()  { return this.#from;  }
+    get x()  { return this.#x;  }
+    get y()  { return this.#y;  }
+    get width()  { return this.#width;  }
+    get height()  { return this.#height;  }
+    get w()  { return this.#width;  }
+    get h()  { return this.#height;  }
     get idname()  { return this.#idname; }
     get target()  { return this.#target; }
     get model()   { return this.#model; }
+    get background() { return this.#background; }
+    get shape() { return this.#shape; }
 
     set(attribute_, value_)
     {
         switch(attribute_)
         {
-            case 'from'    : this.#from =  Deid.build(HelyxRectangle, value_); break;
+            case 'x'    : this.#x = value_; break;
+            case 'y'    : this.#y = value_; break;
+            case 'width' : case 'w'   : this.#width = value_; break;
+            case 'height' : case 'h'   : this.#height = value_; break;
             case 'idname'  : this.#idname   = value_; break;
             case 'target'  : this.#target = value_; break;
             case 'model'   : this.#model = value_; break;
+            case 'background' : this.#background = value_; break;
+            case 'shape': this.#shape = value_; break;
 
             default: throw "Unimplemented attribute '" + attribute_ + "' in HelyxToken ";
         }
     }         
+
+    /** @} **/ /*****************************************************************/
+    /** \name   Custom Serialization
+    **/ /** @{ ******************************************************************/
+
+    inlined() { return true ; }
+
+    write(output_)
+    {
+        output_.inlined_attributes(this,  ['x','y','w','h','idname','target','background','shape','model']);
+    }     
 
 }    
 export class HelyxTokens
@@ -19997,7 +20256,7 @@ export class HelyxImage
     **/ /** @{ ******************************************************************/
 
     /// @brief              In the case the image has to be imported from the pdf, it describes its position inside
-    #pdf = null;
+    #position = null;
 
     /// @brief              Idname of the token
     #idname = null;
@@ -20027,7 +20286,7 @@ export class HelyxImage
     /** \name   Getters, setters
     **/ /** @{ ******************************************************************/
 
-    get pdf     ()          { return this.#pdf; }
+    get position()          { return this.#position; }
     get idname  ()          { return this.#idname; }    
     get target  ()          { return this.#target; }   
     get tokens  ()          { return this.#tokens; }   
@@ -20037,10 +20296,10 @@ export class HelyxImage
     {
         switch(attribute_)
         {
-            case 'pdf': this.#pdf = Deid.build(HelyxPdfPosition, value_); break;
+            case 'position': this.#position = Deid.build(HelyxPdfPosition, value_); break;
             case 'idname': this.#idname = value_; break;
 
-            case 'target' : this.target = value_; break;
+            case 'target' : this.#target = value_; break;
             case 'tokens' : this.#tokens =  Deid.build_array(HelyxToken, value_); break;
             case 'transformation' : this.#transformation = Deid.build(HelyxImageTransformation, value_); break;
 
@@ -20056,8 +20315,14 @@ export class HelyxImage
 
     write(output_)
     {
-        output_.inlined_attributes(this,  ['pdf','idname','target','transformation']);
-        output_.field('tokens',this.#tokens);
+        output_.field('position',this.#position);
+        output_.inlined_attributes(this,  ['idname','target']);
+        if(this.#transformation && (false == this.#transformation.empty))
+        { output_.field('transformation', this.#transformation); }
+
+        let are_tokens_inlined = ( this.#tokens.length == 1) && (this.#tokens[0].inlined);
+        let is_aligned = are_tokens_inlined ? false : true;
+        output_.array('tokens', this.#tokens, { inlined: are_tokens_inlined, aligned: is_aligned, backtab: false });
     } 
 }
 
@@ -20175,6 +20440,7 @@ export class HelyxJournalBlock
 
     get type()      { return this.#type; }
     get replaces()  { return this.#replaces; }
+    get is_block()  { return true; }
 
     set(attribute_, value_)
     {
@@ -21008,7 +21274,7 @@ export class HelyxJournalBlockSpell  extends HelyxJournalBlockEntitySheet
 
     write(output_)
     {
-
+        super.write(output_);
     }      
 }
 
@@ -22317,6 +22583,8 @@ export class ImagesImport
 // Map of images import, indexed by page number 
 #images = new Map();
 
+#negindex = -1;
+
 /**
  
     @brief                  Store an import declaration in the #images map
@@ -22335,13 +22603,20 @@ declare(descriptor_)
     else if(descriptor_.position != null)
     {
 
-        const page_number = descriptor_.position.page,
+        let page_number = descriptor_.position.page,
               index       = descriptor_.position.index;
+
+        if(index == undefined)
+        { 
+            index = this.#negindex; this.#negindex -= 1; 
+            descriptor_.position.index = index;
+        }
 
         if(this.#images.has(page_number) == false)
         { this.#images.set(page_number, new Map()); }
 
         this.#images.get(page_number).set(index, descriptor_);
+        
     }
 }
 
@@ -22360,9 +22635,26 @@ tos(page)
 {
     let html = '';
     let images = this.#images.get(page);
-    for(const [index, descriptor] of images)
+    
+    if(images) for(const [index, descriptor] of images)
     {
         html += "<pre>" + JSON.stringify(descriptor) + "</pre>\n";
+    }
+    return html;    
+}
+
+html(page)
+{
+    let html = '';
+    let first = true;
+    let images = this.#images.get(page);
+    if(images) for(const [index, descriptor] of images)
+    {
+        let str = JSON.stringify(descriptor);
+        if((str == undefined) || (str == "")) { continue; }
+
+        if(first) { first = false; } else { html += ", " }
+        html += str + "\n";
     }
     return html;    
 }
@@ -23426,6 +23718,7 @@ export class HelyxAdventure extends HelyxPart
     get dependencies() { return this.descriptor.dependencies; }
     get default_conversions() { return this.descriptor.default_conversions; }
 
+    get family() { return this.descriptor.jsclass.family; }
     get fixes() { return this.descriptor.fixes; }
 
     get ignore_pages() {return this.descriptor.ignore_pages; }
@@ -23675,12 +23968,14 @@ export class HelyxAdventure extends HelyxPart
                 var txt = _content.at(p, k);   
                 if(!txt)
                 {
-                    Deid.Log.error("Font position doesn't match any text " + JSON.stringify(f));
+                    if((f.roles == null) || (f.roles.indexOf("watermark") != -1))
+                    { Deid.Log.error("Font position doesn't match any text " + JSON.stringify(f)); }
                     continue;
                 }
                 if(!txt.font_decl)
                 {
-                    Deid.Log.error("Text without font declaration at " + f.position);
+                    if((f.roles == null) || (f.roles.indexOf("watermark") != -1))
+                    { Deid.Log.error("Text without font declaration at " + f.position); }
                     txt.font_decl = {};
                 }
                 f.name = txt.font_decl.name;
@@ -24158,6 +24453,25 @@ export class HelyxBlockCreature extends HelyxPart
         return "<span class='helyx-creature-amount'>" +  amount + "</span>";
     }
 
+    _tags(tags)
+    {
+        if(!tags)
+        { return ""; }  
+
+        let res = "<section class='helyx-tags'> ";
+
+        if(tags instanceof Array)
+        {
+            for(let t of tags)
+            { res += Deid.compile(t); }
+        }
+        else
+        { res += Deid.compile(tags); }
+
+        res += "</section>";
+        return res;
+    }
+
     render(ex)
     {
         let result = "<div class='helyx-block-box'>";        
@@ -24171,7 +24485,7 @@ export class HelyxBlockCreature extends HelyxPart
                 + this._actors_link(ex)
                 + this._amount(ex)
                 + "</div>"
-                + (ex.tags ? Deid.compile(ex.tags) : "")
+                + this._tags(ex.tags)
                 + "</div>"
          ;
     
@@ -25051,7 +25365,7 @@ export class HelyxConfiguration
             It is used to identify content generated by a previous version and replace/erase it
 
         */    
-        this.moduleVersion = "3.53";
+        this.moduleVersion = "7.87";
 
         /*
             The module directory must match the relative directory where this module is installed
@@ -25065,6 +25379,13 @@ export class HelyxConfiguration
 
         */
        this.templatesDirectory = this.moduleDirectory + "/templates/exported";
+
+       /*
+
+            Directory of the final module
+
+       */
+       this.finalModuleDirectory = "helyx-maker-3";
 
         /*
 
@@ -25106,6 +25427,11 @@ export class HelyxConfiguration
             If true, consider items are always loaded
         */
         this.bundled = false;
+
+        /*
+            If true, the module is executed on 'forge'
+        */
+        this.forge = false;    
     };    
 }    
 export class HelyxBlankAdventure
@@ -25234,6 +25560,22 @@ export class HelyxHandleBars extends HelyxPart
 
         });         
 
+        Handlebars.registerHelper( "slicexylf", function(page, x, y, blockLength, flags, fromSlice, sliceLength)
+        {
+           let content = new HelyxContentInstruction({
+                op: 'slicexylf', 
+                src:{ page: page, x: x, y: y}, 
+                length: blockLength, 
+                flags: flags,
+                from_slice: fromSlice,
+                slice_length: sliceLength
+            });
+
+
+           return myself.read_content(content);
+
+        }); 
+
         Handlebars.registerHelper( "px", function(index)
         {
             let length = 0;
@@ -25285,10 +25627,22 @@ export class HelyxHandleBars extends HelyxPart
         
         Handlebars.registerHelper( "sbxylf", function(page, x, y, length, flags)
         {           
-           let content = new HelyxContentInstruction({op: 'pxylf', src:{ page: page, x: x, y: y}, length: length, flags: flags});
-            return '<p class="helyx-stat-block-section-title">' + myself.read_content_xy(content) + '</p>';
+           let content = new HelyxContentInstruction({op: 'xylf', src:{ page: page, x: x, y: y}, length: length, flags: flags});
+            return '<p class="helyx-stat-block-section-title">' + myself.read_content(content) + '</p>';
 
         });             
+
+        Handlebars.registerHelper("xytags", function(page, x, y, color)
+        {
+            let res = "";
+            let content = new HelyxContentInstruction({op: 'xyl', src:{ page: page, x: x, y: y}, length: 1});
+            res += '<span class="helyx-tag"';
+            res +=' style="background-color: var(--' + color + ');"';
+            res += '">' + myself.read_content(content) + '</span> ';
+            
+            
+            return res;
+        });        
 
         Handlebars.registerHelper("lnk", function(typeLink, idname)
         {
@@ -25375,6 +25729,26 @@ export class HelyxHandleBars extends HelyxPart
             */   
         });
 
+        Handlebars.registerHelper("helyx", function(code, begin)
+        {
+            if(begin)
+            {
+                switch(code)
+                {
+                    case "details" : return "<div class='helyx-action-details'>";
+                    case "p": return "<p class='helyx-p'>";
+                }
+            }
+            else
+            {
+                switch(code)
+                {
+                    case "details" : return "</div>";
+                    case "p": return "</p>";
+                }
+            }
+        });
+/*
         Handlebars.registerHelper("details",function()
         {
             const options = arguments[arguments.length - 1];
@@ -25389,7 +25763,7 @@ export class HelyxHandleBars extends HelyxPart
             result += "</div>"
             return result;
         });
-
+*/
         Handlebars.registerHelper("hr",function()
         {
             return '<hr/>';
@@ -25753,7 +26127,7 @@ export class PdfContent {
     }
 
 
-    apply_options(str_, options_)
+    apply_options(str_, options_, from_)
     {
         if(options_.trim_tabs)
         { str_ = str_.trim(); }
@@ -25807,7 +26181,7 @@ export class PdfContent {
         {
             let fn = this.source_fixes;
             if (fn)
-            str_= fn(str_, _from);
+            str_= fn(str_, from_);
         }
         
         return str_;
@@ -25843,7 +26217,7 @@ export class PdfContent {
         
         }
         
-        return this.apply_options(str, _options);
+        return this.apply_options(str, _options, _from);
     }
 
     at_position(position_)
@@ -25852,6 +26226,9 @@ export class PdfContent {
         let length = 1;
 
         let str = "";
+
+        if( this.indexes[position_.page] == undefined)
+        { return null; }
 
         let results = this.indexes[position_.page][str_index];
         if(results)
@@ -25863,16 +26240,24 @@ export class PdfContent {
         else { return null; }
     }
 
+    xy_to_index(position_)
+    {
+        let str_index = "" + Math.round(position_.x) + " " + Math.round(position_.y);
+        let results = this.indexes[position_.page][str_index];
+        if(results)
+        { return position_.page * 1000 + results[0]; }
+        else { return null; }
+    }
+
     read_content_xy(content_) 
     { 
-        let str_index = "" + Math.round(content_.position.x) + " " + Math.round(content_.position.y);
         let length = content_.length;
         if(length == undefined || (length <= 0)) length = 1;
 
         let str = "";
 
-        let index = this.indexes[content_.position.page][str_index][0];
-        index += content_.position.page * 1000;
+        let index = this.xy_to_index(content_.position);
+        const start_index = index;
 
         for (let i = 0; i < length; i++, index++) 
         {
@@ -25883,7 +26268,7 @@ export class PdfContent {
         
         }
 
-        return this.apply_options(str, content_.flags);
+        return this.apply_options(str, content_.flags, start_index);
     }
 
     read_content(content_)
@@ -25897,7 +26282,7 @@ export class PdfContent {
         switch(content_.op)
         {
             case 'raw':
-            { return this.apply_options(content_.raw, {}); }
+            { return this.apply_options(content_.raw, {}, 0); }
             case 'xf':
             { return this.read(content_.src.index, content_.src.index, content_.flags); }
             case 'xlf': case 'xl':
@@ -25906,12 +26291,12 @@ export class PdfContent {
             { return  '<p class="helyx-p">' + this.read(content_.src.index, content_.src.index + content_.length, content_.flags) + '</p>'; }   
             case 'xylf': case 'xyf': case 'xyl':
             { return this.read_content_xy(content_); }
-            case 'pxyl':
+            case 'pxyl': case 'pxylf': case 'pxyf':
             { return '<p class="helyx-p">' + this.read_content_xy(content_) + '</p>'; }
             case 'sbxlf':
-            { return '<p class="helyx-stat-block-section-title">' + myself.read(content_.src.index, content_.src.index + content_.length, content_.flags) + '</p>'; }
+            { return '<p class="helyx-stat-block-section-title">' + this.read(content_.src.index, content_.src.index + content_.length, content_.flags) + '</p>'; }
             case 'sbxylf':
-            { return '<p class="helyx-stat-block-section-title">' + myself.read_content_xy(content_) + '</p>'; }            
+            { return '<p class="helyx-stat-block-section-title">' + this.read_content_xy(content_) + '</p>'; }            
             case 'slicexlf':
             {
                 let str = this.read(content_.src.index, content_.src.index + content_.length, content_.flags);
@@ -26362,8 +26747,7 @@ export class HelyxPF2 extends HelyxPart
     {
         Handlebars.registerHelper("pf2tags", function( )
         {
-            let res = '<section class="helyx-tags"> '
-            
+            let res = "";            
             for(let i = 0; i < arguments.length - 1; i +=2)
             {
                 let val = arguments[i];
@@ -26376,11 +26760,11 @@ export class HelyxPF2 extends HelyxPart
                 if(color.length)
                 { res +=' style="background-color: var(--' + color + ');"'; }
 
-                res += '">' + tagStr + '</span> ';
+                res += '>' + tagStr + '</span> ';
             }
-            res += '</section>';
             return res;
         });
+
     }
 
     initGameSystemHandlebarsHelpers()
@@ -27034,6 +27418,8 @@ export class HelyxMachine
         this.#states = new Map();
         for(let s of _states)
         {
+            if(s == null) continue;
+
             const idx = s.index;
 
             if(idx == null)
@@ -27078,7 +27464,10 @@ export class HelyxMachine
     {
         let promises = [];
         for(let s of this.#states.values())
-        { promises.push(s.release()); }
+        { 
+            if(s == null) continue;
+            promises.push(s.release()); 
+        }
 
         return Promise.all(promises);        
     }
@@ -27295,10 +27684,7 @@ export class StateReadPages extends HelyxState
 
             let index = (page_number*1000) + k, 
                 x = block.transform[4], 
-                y = block.transform[5];
-
-            if(page_number == 2)
-            Deid.Log.debug( "Block " + k + " : " + block.str + " at (" + x + "," + y + ")");
+                y = block.transform[5];        
 
             let entry = 
             {      
@@ -27571,279 +27957,6 @@ export class StateUnknownAdventure extends HelyxState
     }
 }
 
-export class StateCheckDRM extends HelyxState 
-{
-    #drm_ok_state = -1;
-    #drm_ko_state = -1;
-
-    constructor(_machine, _options = { })
-    {
-        super(_machine, _options);
-        this.#drm_ok_state = _options.drm_ok_state ?? -1;
-        this.#drm_ko_state = _options.drm_ko_state ?? -1;
-    }  
-
-    #tag_watermark_block(block)
-    {
-        if(block.roles == undefined)
-        { block.roles = []; }
-
-        if(block.roles.includes('WATERMARKS') == false)
-        { block.roles.push('WATERMARKS'); }
-        
-    }
-
-    #paizo()
-    {
-        let first = false;
-        let counter1 = 0;
-        let counter2 = 1;
-        let line1 = "";
-
-        let nb_pages = this.context.nb_pages;
-
-        // The last page is the back cover and doesn't have any watermark
-        for(let page = 1; page < nb_pages; page++)
-        {
-
-            let content = this.context.content.pages[page];
-            if(first == false)
-            {
-                line1 = content[0].str;
-                first = true;
-            }
-            counter1 = content[2].str;
-            counter2 = content[5].str;
-
-            let i = 0;
-
-            if(!line1.startsWith('paizo.com'))
-            { Deid.Log.error("ERROR paizo drm at index " +  (page*1000)); return false; }
-
-            if(content[i].str != line1)
-            {  Deid.Log.error("ERROR paizo drm at index " + (page*1000)); return false; }
-
-            this.#tag_watermark_block(content[i]);
-            i++;
-
-            if(content[i].str != line1)
-            {  Deid.Log.error("ERROR paizo drm at index " + (page*1000+1)); return false; }
-
-            this.#tag_watermark_block(content[i]);
-            i++;
-
-            if(content[i].str != counter1)
-            {  Deid.Log.error("ERROR paizo drm at index " + (page*1000+2)); return false; }
-
-            this.#tag_watermark_block(content[i]);
-            i++;
-
-            if(content[i].str != counter1)
-            {  Deid.Log.error("ERROR paizo drm at index " + (page*1000+3)); return false; }
-
-            this.#tag_watermark_block(content[i]);
-            i++;
-
-            if(content[i].str != counter1)
-            {  Deid.Log.error("ERROR paizo drm at index " + (page*1000+4)); return false; }
-
-            this.#tag_watermark_block(content[i]);
-            i++;
-
-            if(content[i].str != counter2)
-            {  Deid.Log.error("ERROR paizo drm at index " + (page*1000+5)); return false; }
-
-            this.#tag_watermark_block(content[i]);
-            i++;
-
-            if(content[i].str != counter2)
-            {  Deid.Log.error("ERROR paizo drm at index " + (page*1000+6)); return false; }
-
-            this.#tag_watermark_block(content[i]);
-            i++;
-
-            if(content[i].str != counter2)
-            {  Deid.Log.error("ERROR paizo drm at index " + (page*1000+7)); return false; }  
-
-            i = content.length-8;
-            if(content[i].str != line1)
-            {  Deid.Log.error("ERROR paizo drm at index " + (page*1000)); return false; }
-
-            this.#tag_watermark_block(content[i]);
-            i++;
-
-            if(content[i].str != line1)
-            {  Deid.Log.error("ERROR paizo drm at index " + (page*1000+1)); return false; }
-
-            this.#tag_watermark_block(content[i]);
-            i++;
-
-            if(content[i].str != counter1)
-            {  Deid.Log.error("ERROR paizo drm at index " + (page*1000+2)); return false; }
-
-            this.#tag_watermark_block(content[i]);
-            i++;
-
-            if(content[i].str != counter1)
-            {  Deid.Log.error("ERROR paizo drm at index " + (page*1000+3)); return false; }
-
-            this.#tag_watermark_block(content[i]);
-            i++;
-
-            if(content[i].str != counter1)
-            {  Deid.Log.error("ERROR paizo drm at index " + (page*1000+4)); return false; }
-
-            this.#tag_watermark_block(content[i]);
-            i++;
-
-            if(content[i].str != counter2)
-            {  Deid.Log.error("ERROR paizo drm at index " + (page*1000+5)); return false; }
-
-            this.#tag_watermark_block(content[i]);
-            i++;
-
-            if(content[i].str != counter2)
-            {  Deid.Log.error("ERROR paizo drm at index " + (page*1000+6)); return false; }
-
-            this.#tag_watermark_block(content[i]);
-            i++;
-
-            if(content[i].str != counter2)
-            {  Deid.Log.error("ERROR paizo drm at index " + (page*1000+7)); return false; }    
-            
-            this.#tag_watermark_block(content[i]);
-                                                       
-        }    
-
-        return true;
-    }
-
-    #bbe()
-    {
-        
-        let msg = "";
-        let nb_pages = this.context.nb_pages;
-        for(let page = 1; page <= nb_pages; page++)
-        {
-            if(0 == (page % 2))
-            { continue; }
-
-            let content = this.context.content.pages[page];
-            let block = content[ content.length -1 ];
-
-            if(block)
-            {
-                let value = block.str;
-                if(msg == "")
-                { msg = value;}
-                else
-                if( msg != value)
-                {
-                    Deid.Log.error("Failed to check watermark at index " + i + ". Found " + value + ", expected " + msg); 
-                    return false; 
-                }
-                
-            }
-            else 
-            {
-                Deid.Log.error( "Failed to check watermark at index " + i);
-                return false;
-            }
-        }
-
-        let parts = msg.split('-');
-        if(parts.length != 3)
-        {
-            Deid.Log.error("Wrong format for watermark " + msg);
-            return false;            
-        }
-        let ends = parts[2].split('/');
-        if(parts.length != 3)
-        {
-            Deid.Log.error("Wrong format 2 for watermark " + msg);
-            return false;
-        }
-
-        return true;
-    }
-
-    #check_drm()
-    {
-        let result = false;
-        switch(this.context.adventure.drm)
-        {
-            case 'BBE' : result = this.#bbe(); break;
-            case 'PAIZO' : result = this.#paizo();  break;
-            case 'FREE' : result = true; break;
-            default: result = false; break;
-        }
-
-        this.status(this.Status.RUNNING);
-
-        if(result)
-        { this.proceed( this.#drm_ok_state); }
-        else 
-        { this.proceed( this.#drm_ko_state); }
-    }
-
-    do_start()
-    {
-        let myself = this;
-        return new Promise ( () => { myself.#check_drm(); });
-    }
-}
-
-export class StateDRMFailed extends HelyxState 
-{
-    #dialog = null;
-
-    constructor(_machine, _options = { })
-    {
-        super(_machine, _options);
-    }  
-
-    async #setup_drm_failed_dialog()
-    {
-        this.context.progress_dialog.close();
-        delete this.context.progress_dialog;
-
-        const   template     = this.context.templates_directory + '/missingWatermarks.hbs';
-        let dialogDatas = { pdfFilename : this.context.pdf_filename };
-
-        this.#dialog =  new Dialog
-        ({
-                title: "Helyx - Echec",
-                content: await foundry.applications.handlebars.renderTemplate(template, dialogDatas),
-                buttons: 
-                {
-                    ok: 
-                    {
-                        icon: '<i class="fas fa-times"></i>',
-                        label: "Ok"
-                    }
-                },
-                render: html => Deid.Log.debug("Pirate pdf dialog created"),
-        }, { resizable: false });
-
-        this.status(this.Status.RUNNING);
-        this.#dialog.render(true);
-
-        this.end();
-    }
-
-    do_start()
-    {
-        let myself = this;
-        return new Promise
-        ( 
-            function() 
-            { 
-                myself.#setup_drm_failed_dialog(); 
-            }
-        );
-    }
-}
-
 export class StateCheckDependencies extends HelyxState 
 {
     #next_state = -1;
@@ -27976,7 +28089,6 @@ export class StateLoadFiles extends HelyxState
 #next_state = -1;
 #fonts = [];
 #images = [];
-#scenes_elements = [];
 #art_map = [];
 
 constructor(_machine, _options = { })
@@ -27986,7 +28098,17 @@ constructor(_machine, _options = { })
 }
 
 #font_loaded( font_ )
-{ this.#fonts.push(font_); }
+{ 
+    // Fix font position
+    if((font_.src) && !(font_.src instanceof HelyxPdfPosition))
+    { font_.src = new HelyxPdfPosition(font_.src); }
+
+    // Finx font index
+    if(font_.src)
+    { font_.position = this.context.content.xy_to_index(font_.src); }
+
+    this.#fonts.push(font_); 
+}
 
 async #load_fonts()
 {
@@ -28023,23 +28145,6 @@ async #load_images()
 {
     this.context.images = new ImagesImport();
     this.context.images.declare( this.context.adventure.images );
-}
-
-#scene_element_loaded( element_ )
-{ this.#scenes_elements.push(element_); }
-
-async #load_scenes_elements()
-{
-    const files = this.adventure.descriptor.scenes_elements_files;
-    if(!files) 
-    { return; }
-
-    this.#images = [];
-
-    let items_directory = this.adventure.datas_directory + '/items/' + this.adventure.idname ;
-    let myself = this;
-    await Deid.load_json_files(items_directory, files, function(entry_) { myself.#scene_element_loaded(entry_.item); });
-    this.adventure.descriptor.scenes_elements = this.#scenes_elements;
 }
 
 #art_element_loaded( element_ )
@@ -28092,7 +28197,6 @@ async #load_files()
     await this.#load_fonts();
     await this.#load_images();
     this.#declare_images();
-    await this.#load_scenes_elements();
     await this.#load_art_map();
 
     return this.#proceed_next_state();
@@ -28563,6 +28667,26 @@ export class StateImportImages extends HelyxState
         return cn;
     }
 
+    #token_color(entry_)
+    {
+        if(entry_.color)
+        { return entry_.color; }
+
+        if(entry_.model)
+        {
+            switch(entry_.model)
+            {
+                case 'green_marble': return "green";
+                case 'red_evil': return "red";
+                case 'green_bamboo': return "green";
+
+                default: return "green";
+            }
+        }
+
+        return "green";
+    }
+
     #save_colored_ring(context_, token_entry_)
     {
         const ring_width = token_entry_.w / 15;
@@ -28587,7 +28711,7 @@ export class StateImportImages extends HelyxState
         ctx.drawImage(mask, 0, 0);
 
         ctx.lineWidth = ring_width;
-        ctx.strokeStyle = token_entry_.color ?? "green";
+        ctx.strokeStyle = this.#token_color(token_entry_);
         ctx.stroke();
 
         return cn;
@@ -28596,7 +28720,7 @@ export class StateImportImages extends HelyxState
     #resolve_token_type(token_entry_)
     {
         if(token_entry_.shape && token_entry_.shape == "rect")      return 'rectangle';
-        if(token_entry_.model) return 'custom_ring';
+        if(token_entry_.model  && (game.helyx.config.forge == false)) return 'custom_ring';
 
         return 'colored_ring';
 
@@ -28715,11 +28839,14 @@ export class StateImportImages extends HelyxState
 
     #image_match(images_, x_, y_, w_, h_)
     {
+        x_ = Math.round(x_);
+        y_ = Math.round(y_);
+
        for(let img of images_)
         {
             let pos = img.position;
             
-            if(Math.round(x_) != Math.round(pos.x) || Math.round(y_) != Math.round(pos.y))
+            if(x_ != Math.round(pos.x) || y_ != Math.round(pos.y))
             { continue; }
 
             if((pos.width) && (pos.height))
@@ -28748,7 +28875,7 @@ export class StateImportImages extends HelyxState
         for(let img of images.values())
         {
             let position = img.position; 
-            if((position.x) && (position.y) && (position.x != NaN) && (position.y != NaN))
+            if((position.x != null) && (position.y != null) && (position.x != NaN) && (position.y != NaN))
             {
                 images_per_position.push(img);
                 continue;
@@ -28801,6 +28928,26 @@ export class StateImportImages extends HelyxState
 
             if((img.position.skip) && (img.position.skip != 0))
             { img.position.skip --; continue; }
+            
+            if((img.position.w) && (arg[1] != img.position.w))
+            { continue; }
+
+            if((img.position.h) && (arg[2] != img.position.h))
+            { continue; }
+
+            if(img.position.size)
+             {
+                let obj = await this.#obj(page_, arg[0]); 
+                if(obj == null) continue;
+                if(obj.data.length != img.position.size) continue;
+             }
+
+            if(img.count == null) img.count = 0;
+            img.count ++;
+            if(img.count > 1)
+            { 
+                Deid.Log.error("Image " + img.idname + " is duplicated at index " + i + " of page " + page_number_ + " with position " + JSON.stringify(img.position)); 
+            }
 
             await this.#do_import_image(img, page_, arg, fn);
 
@@ -29280,24 +29427,55 @@ async #import_from_compendium(item_, source_, entity_type_)
     async #import_actor(_item)
     {
         const source = _item.helyx.source(game.system.id);
-        if(source.type == "compendium")
-        {
-            let model = await this.#import_from_compendium(_item, source, 'Actor');
-            this.#complete_actor_model(model, _item);
-            let imported = await Actor.implementation.create(model);
-            //await imported.prepareBaseData();
-            await this.#complete_import(imported, _item);
 
-            let message = game.i18n.format("Helyx.Advance.ActorImported", {name: _item.finalName});
-            this.advance("item", message);
+        let model = null;
+        switch(source.type)
+        {
+            case "compendium": 
+            {
+                model = await this.#import_from_compendium(_item, source, 'Actor'); 
+                break;
+            }
+            case "json":
+            {
+                model = { includes: source.includes };
+                model = await Deid.load_included_files(model);
+                model.includes = null;
+                this.#generic_model(model, _item);
+                break;
+            }    
+            default: 
+            {
+                Deid.Log.error("Import actor #" + _item.helyx.idname + " with unimplemented source type '" + source.type + "'");
+                return;
+            }
         }
+
+        this.#complete_actor_model(model, _item);
+        let imported = await Actor.implementation.create(model);
+
+        await this.#complete_import(imported, _item);
+
+        let message = game.i18n.format("Helyx.Advance.ActorImported", {name: _item.finalName});
+        this.advance("item", message);
+        
     }
 
     #complete_item_model(template, ex)
     {
 
         if(ex.name && ex.name.length != 0)
-        { template.name = this.contents(ex.name); }
+        { 
+            let strname = this.contents(ex.name);
+            if(strname == null || strname.length == 0)
+            {
+                Deid.Log.error("In item #" + ex.helyx.idname + ", failed to compute name, got '" + strname + "' from '" + ex.name + "'");                
+            } 
+            else
+            {
+                template.name = strname;
+            }
+        }
 
         delete template._id;
 
@@ -29383,7 +29561,7 @@ async #import_from_compendium(item_, source_, entity_type_)
             let model = await this.#import_from_compendium(_item, source, 'Item');
             this.#complete_item_model(model, _item);
             let imported = await Item.create(model);
-            await imported.prepareBaseData();
+            // await imported.prepareBaseData();
             await this.#complete_import(imported, _item);
     
             let message = game.i18n.format("Helyx.Advance.ItemCreated", {name: _item.finalName});
@@ -29516,17 +29694,6 @@ async #import_from_compendium(item_, source_, entity_type_)
 
         for(const note of model.notes)
         { delete note.idname; } 
-        
-        const elements = this.adventure.descriptor.scenes_elements;
-
-        if(elements)
-        {
-            let tokens = Hyx.SceneTokens.generate_tokens
-            (
-                elements,
-                { idname: entry_.helyx.idname, img: entry_.background.src }
-            )
-        };
 
         if(!game.scenes.active ) 
         { model.active = true; }
@@ -30246,7 +30413,7 @@ async #find_source(entry_, pack_name_)
     return null;
 }
 
-async #generate_art_map()
+async #generate_art_map(arts_)
 {
     let raw_art_map = this.adventure.descriptor.art_map;
     
@@ -30255,7 +30422,6 @@ async #generate_art_map()
 
     const actor_directory = '/helyx/' + this.adventure.export_directory + '/actors/';
 
-    let arts = {};
     for(const entry of raw_art_map)
     {
         if(entry.ignore)
@@ -30280,40 +30446,57 @@ async #generate_art_map()
         const token_art_filename = actor_directory + entry.token + '.webp';
         
         let art = {};
+        art[ 'name' ] = entry.name;
         art[ this.#type_keyword(entry.type) ] = main_art_filename;
-        art[ 'token' ] =  token_art_filename;
+        art[ 'token' ] =  { texture: { src: token_art_filename}};
 
-        let index_pack = pack_name.replace('sfrpg.','');
-
-        if(!arts[index_pack])
-        { arts[index_pack] = {}; }
+        if(!arts_[pack_name])
+        { arts_[pack_name] = {}; }
         
-        arts [index_pack] [source.id ] = art;
+        arts_ [pack_name] [source.id ] = art;
 
         this.advance("art", "Generated art mapping for " + entry.name);
     }
 
-    return arts;
+    return arts_;
 }
 
 async #generate_art_map_file()
 {
-    const art_map = await this.#generate_art_map();
+    // Retrieve current global art map
+    const art_map_filename = '/helyx/art_maps/sfrpg/alien_archives.json';
+    let arts = {}; 
+    try
+    {
+        let arts_string = await Deid.FS.file2string(art_map_filename);
+        arts = JSON.parse(arts_string);
+    }
+    catch(e)
+    {
+        arts = {}; 
+    }
+
+    const art_map = await this.#generate_art_map(arts);
     if((art_map == undefined) || (art_map.length == 0))
     {
         Deid.Log.report("No art map defined for this pdf");
         return;
     }
 
-    const exported_art_map_filename = this.adventure.idname + '_art-map';
+    //const exported_art_map_filename = this.adventure.idname;
+    const exported_art_map_filename = "alien_archives";
     const exported_art_map = JSON.stringify(art_map, null, "\t");
 
     const blob = new Blob([exported_art_map], {type: "application/json"} )
 
-    await Deid.upload(blob, '/helyx', exported_art_map_filename); 
-    Deid.Log.report("Art map generated into '/helyx/" + exported_art_map_filename);
+    await Deid.mkdir('data', '/helyx');
+    await Deid.mkdir('data', '/helyx/art_maps');
+    await Deid.mkdir('data', '/helyx/art_maps/sfrpg');
 
-    await game.sfrpg.compendiumArt.refresh();
+    await Deid.upload(blob, '/helyx/art_maps/sfrpg', exported_art_map_filename); 
+    Deid.Log.report("Art map generated into '/helyx/art_maps/sfrpg" + exported_art_map_filename);
+
+    // await game.sfrpg.compendiumArt.refresh();
     this.advance("art", "Refreshed global art mapping");
 }
 
@@ -30333,14 +30516,14 @@ do_start()
 }
 export class HelyxSF2S1E01
 {
-    static idname = "sf2s1e01-invasion-s-edge";
+    static idname = "sf2s1e01";
     static prefix = "sf2s1e01";
     static nbPages = 15;
     static identification = {position : { page: 15, x: 265, y: 710}, value: 'Invasion’s Edge' };
 
     static resources_directories = [ "actors", "scenes", "items", "assets"];
     static drm = "FREE" ;
-    static system="pf2e";
+    static system="sf2e";
     static content = { from: 2, to: 15};
     static midsize = { odd: 300, even: 300};
     static language = 'en';
@@ -30400,10 +30583,10 @@ export class HelyxSF2S1E01
 		"type": "Actor",
 		"target": "sf2s1e01_bestiary",
 		"sources": {
-			"pf2e": {
+			"sf2e": {
 				"name": "Cephalaspis Corpse",
 				"type": "compendium",
-				"compendium": "sf2e-anachronism.starfinder-society-bestiary"
+				"compendium": "sf2e.starfinder-society-bestiary"
 			}
 		}
 	},
@@ -30420,10 +30603,10 @@ export class HelyxSF2S1E01
 		"type": "Actor",
 		"target": "sf2s1e01_bestiary",
 		"sources": {
-			"pf2e": {
+			"sf2e": {
 				"name": "Drillworm",
 				"type": "compendium",
-				"compendium": "sf2e-anachronism.starfinder-society-bestiary"
+				"compendium": "sf2e.starfinder-society-bestiary"
 			}
 		}
 	},
@@ -30440,10 +30623,10 @@ export class HelyxSF2S1E01
 		"type": "Actor",
 		"target": "sf2s1e01_bestiary",
 		"sources": {
-			"pf2e": {
+			"sf2e": {
 				"name": "Robotic Oil",
 				"type": "compendium",
-				"compendium": "sf2e-anachronism.starfinder-society-bestiary"
+				"compendium": "sf2e.starfinder-society-bestiary"
 			}
 		}
 	},
@@ -30460,10 +30643,10 @@ export class HelyxSF2S1E01
 		"type": "Actor",
 		"target": "sf2s1e01_hazards",
 		"sources": {
-			"pf2e": {
+			"sf2e": {
 				"name": "Warped Weather",
 				"type": "compendium",
-				"compendium": "sf2e-anachronism.starfinder-society-bestiary"
+				"compendium": "sf2e.starfinder-society-bestiary"
 			}
 		}
 	}
@@ -30474,10 +30657,11 @@ export class HelyxSF2S1E01
 		"type": "Actor",
 		"target": "sf2s1e01_roleplay_npcs",
 		"sources": {
-			"pf2e": {
-				"name": "Commoner",
-				"type": "compendium",
-				"compendium": "pf2e.pathfinder-npc-core"
+			"sf2e": {
+				"type": "json",
+				"includes": [
+					"modules/sf2-pdf-en-import/datas/bestiary/commoner.json"
+				]
 			}
 		}
 	},
@@ -30557,14 +30741,14 @@ export class HelyxSF2S1E01
 
 export class HelyxSF2S1E03
 {
-    static idname = "sf2s1e03-disaster-at-dreamlink-labs";
+    static idname = "sf2s1e03";
     static prefix = "sf2s1e03";
     static nbPages = 15;
     static identification = {position : { page: 15, x: 218, y: 710}, value: 'Disaster at Dreamlink Labs' };
 
     static resources_directories = [ "actors", "scenes", "items", "assets"];
     static drm = "FREE" ;
-    static system="pf2e";
+    static system="sf2e";
     static content = { from: 2, to: 15};
     static midsize = { odd: 300, even: 300};
     static language = 'en';
@@ -30623,10 +30807,10 @@ export class HelyxSF2S1E03
 		"type": "Actor",
 		"target": "sf2s1e03_bestiary",
 		"sources": {
-			"pf2e": {
+			"sf2e": {
 				"name": "Ichor Mite",
 				"type": "compendium",
-				"compendium": "sf2e-anachronism.starfinder-society-bestiary"
+				"compendium": "sf2e.starfinder-society-bestiary"
 			}
 		}
 	},
@@ -30643,10 +30827,10 @@ export class HelyxSF2S1E03
 		"type": "Actor",
 		"target": "sf2s1e03_bestiary",
 		"sources": {
-			"pf2e": {
+			"sf2e": {
 				"name": "Ichorwell Handler",
 				"type": "compendium",
-				"compendium": "sf2e-anachronism.starfinder-society-bestiary"
+				"compendium": "sf2e.starfinder-society-bestiary"
 			}
 		}
 	},
@@ -30663,10 +30847,10 @@ export class HelyxSF2S1E03
 		"type": "Actor",
 		"target": "sf2s1e03_bestiary",
 		"sources": {
-			"pf2e": {
+			"sf2e": {
 				"name": "Ichorwell Raider",
 				"type": "compendium",
-				"compendium": "sf2e-anachronism.starfinder-society-bestiary"
+				"compendium": "sf2e.starfinder-society-bestiary"
 			}
 		}
 	},
@@ -30683,10 +30867,10 @@ export class HelyxSF2S1E03
 		"type": "Actor",
 		"target": "sf2s1e03_encounter_npcs",
 		"sources": {
-			"pf2e": {
+			"sf2e": {
 				"name": "Shosodax",
 				"type": "compendium",
-				"compendium": "sf2e-anachronism.starfinder-society-bestiary"
+				"compendium": "sf2e.starfinder-society-bestiary"
 			}
 		}
 	},
@@ -30703,10 +30887,11 @@ export class HelyxSF2S1E03
 		"type": "Actor",
 		"target": "sf2s1e03_roleplay_npcs",
 		"sources": {
-			"pf2e": {
-				"name": "Commoner",
-				"type": "compendium",
-				"compendium": "pf2e.pathfinder-npc-core"
+			"sf2e": {
+				"type": "json",
+				"includes": [
+					"modules/sf2-pdf-en-import/datas/bestiary/commoner.json"
+				]
 			}
 		}
 	},
@@ -30724,10 +30909,11 @@ export class HelyxSF2S1E03
 		"type": "Actor",
 		"target": "sf2s1e03_roleplay_npcs",
 		"sources": {
-			"pf2e": {
-				"name": "Commoner",
-				"type": "compendium",
-				"compendium": "pf2e.pathfinder-npc-core"
+			"sf2e": {
+				"type": "json",
+				"includes": [
+					"modules/sf2-pdf-en-import/datas/bestiary/commoner.json"
+				]
 			}
 		}
 	},
@@ -30793,6 +30979,1467 @@ export class HelyxSF2S1E03
 }
 
 
+export class HelyxSF2S1E14
+{
+    static idname = "sf2s1e14";
+    static prefix = "sf2s1e14";
+    static nbPages = 15;
+    static identification = {position : { page: 14, x: 314, y: 75}, value: 'Starfinder  Society  Scenario  #1-14:  The  Beasts  of  Bo:  Part  One  ' };
+
+    static resources_directories = [ "actors", "scenes", "items", "assets"];
+    static drm = "FREE" ;
+    static system="sf2e";
+    static content = { from: 2, to: 15};
+    static midsize = { odd: 300, even: 300};
+    static language = 'en';
+    static color_assign = "default";
+
+
+
+    static flags = 
+    { 
+        midjourney_content: false, 
+        tokens_on_maps: false,
+        skip_pages_without_images: false,
+        art_map: false
+    };
+
+    static summary = 
+    {
+        cover: { image: "cover", x: 0, y: 776, width: 3005, height: 1354 },
+        title: "SF2S1E14 - {{{xylf 1 155 103 2 'an'}}}",
+        summary: ""
+            
+    };
+
+    static contents = 
+    {
+        pfs_how_to_play: null,
+        front_credits: { locations: { page: 2, bounds: { left: 17, top: 700, right: 300, bottom: 210 } } },
+        credits: { },
+        license: { }
+    };
+
+    static fonts = [];
+    static fonts_files = [ "fonts" ];
+
+    static images = [{"position":{"page":1,"x":-1,"y":206},"idname":"cover","target":"assets"}
+,{"position":{"page":3,"x":380,"y":441},"idname":"akiton","target":"assets"}
+,{"position":{"page":4,"x":-1,"y":11},"idname":"first_seeker.actor","target":"actors","tokens":[{"x":364,"y":359,"w":563,"h":563,"idname":"first_seeker.token","target":"actors","model":"green_sfrpg"}]}
+,{"position":{"page":5,"x":104,"y":92},"idname":"bandit.actor","target":"actors","tokens":[{"x":582,"y":173,"w":1040,"h":1040,"idname":"bandit.token","target":"actors","model":"red_sfrpg"}]}
+,{"position":{"page":6,"x":41,"y":699},"idname":"scene-a","target":"scenes","transformation":{"rotation":90}}
+,{"position":{"page":7,"x":-1,"y":51},"idname":"chendre.actor","target":"actors","tokens":[{"x":223,"y":46,"w":730,"h":730,"idname":"chendre.token","target":"actors","model":"red_sfrpg"}]}
+,{"position":{"page":9,"x":161,"y":53},"idname":"bo-shek.actor","target":"actors","tokens":[{"x":542,"y":504,"w":1044,"h":1044,"idname":"bo-shek.token","target":"actors","model":"red_sfrpg"}]}
+,{"position":{"page":10,"x":43,"y":699},"idname":"scene-b","target":"scenes","transformation":{"rotation":90}}
+,{"position":{"page":12,"x":35,"y":50},"idname":"dvees","target":"assets"}
+];
+    static images_files = [ "images" ];
+
+    static scenes_elements = [];
+    static scenes_elements_files = [];
+
+    static art_map = [];
+    static art_map_files = [];
+
+    static import_order = [];
+    static items = new Map([]);
+    static itemsFiles =     
+    [ 
+        "actors",
+        //"scenes/scene-a", "scenes/scene-b"
+    ]; 
+
+    static folders = 
+    [ 
+        // { idname: "sf2s1e14_journals", name: 'sf2s1e14 - {{{xylf 15 218 710 0 "an"}}}', type: "JournalEntry" },
+
+        // Actors
+        { idname: "sf2s1e14_actors", name: "SF2S1E14 - {{{xylf 1 155 103 2 'an'}}}", type: "Actor" },     
+        { idname: "sf2s1e14_bestiary", name: "Bestiary", parent: "sf2s1e14_actors" },  
+        // { idname: "sf2s1e14_hazards", name: "Hazards", parent: "sf2s1e14_actors" },  
+        { idname: "sf2s1e14_encounter_npcs", name: "Encounter NPCs", parent: "sf2s1e14_actors" },      
+        { idname: "sf2s1e14_roleplay_npcs", name: "Roleplay NPCs", parent: "sf2s1e14_actors" },      
+
+        // Scenes
+        { idname: "sf2s1e14_scenes", name: "SF2S1E14 - {{{xylf 1 155 103 2 'an'}}}", type: "Scene" },  
+
+    ];
+
+    static fixes(str, index)
+    {
+        return str.replace("�", ".").replace("�", ".");
+    }  
+}
+
+
+export class HelyxSF2S2E01
+{
+    static idname = "sf2s2e01";
+    static prefix = "sf2s2e01";
+    static nbPages = 15;
+    static identification = {position : { page: 14, x: 269, y: 718}, value: 'The First Cut' };
+
+    static resources_directories = [ "actors", "scenes", "items", "assets"];
+    static drm = "FREE" ;
+    static system="sf2e";
+    static content = { from: 3, to: 11};
+    static midsize = { odd: 300, even: 300};
+    static language = 'en';
+    static color_assign = "default";
+
+    static flags = 
+    { 
+        midjourney_content: false, 
+        tokens_on_maps: false,
+        skip_pages_without_images: false,
+        art_map: false
+    };
+
+    static summary = 
+    {
+        cover: { image: "cover", x: 0, y: 396, width: 2522, height: 1200 },
+        title: "SF2S2E01 - {{{xylf 14 269 718 1 'an'}}}", 
+        summary: "{{{pxyl 2 224 279 5}}}"
+            
+    };
+
+    static contents = 
+    {
+        pfs_how_to_play: null,
+        front_credits: { locations: { page: 2, bounds: { left: 17, top: 700, right: 300, bottom: 210 } } },
+        credits: { },
+        license: { }
+    };
+
+    static fonts = [{"position":2000,"flags":{"skip":true},"roles":["title"],"index":0}
+,{"position":2004,"flags":{"skip":true},"roles":["title"],"index":1}
+,{"position":2005,"flags":{"bold":true},"roles":["paragraph"],"index":2}
+,{"position":2036,"flags":{},"roles":["section"],"index":3}
+,{"position":2037,"flags":{},"roles":["paragraph"],"index":4}
+,{"position":2040,"flags":{"skip":true},"roles":["title"],"index":5}
+,{"position":2041,"flags":{},"roles":["journal-title"],"index":6}
+,{"position":2042,"flags":{"skip":true},"roles":["title"],"index":7}
+,{"position":2043,"flags":{},"roles":["journal-title"],"index":8}
+,{"position":2049,"flags":{},"roles":["journal-title"],"index":9}
+,{"position":2051,"flags":{},"roles":["paragraph","stat-block"],"index":10}
+,{"position":2062,"flags":{"italic":true},"roles":["paragraph","stat-block"],"index":11}
+,{"position":2065,"flags":{"skip":true},"roles":[],"index":12}
+,{"position":2066,"flags":{"bold":true},"roles":["paragraph"],"index":13}
+,{"position":2067,"flags":{"skip":true},"roles":[],"index":14}
+,{"position":2068,"flags":{},"roles":["journal-title"],"index":15}
+,{"position":2070,"flags":{"bold":true},"roles":["paragraph","section","stat-block"],"index":16}
+,{"position":2086,"flags":{"skip":true},"roles":["title"],"index":17}
+,{"position":2090,"flags":{"skip":true},"roles":["title"],"index":18}
+,{"position":3000,"flags":{"skip":true},"roles":["page-number"],"index":19}
+,{"position":3001,"flags":{"skip":true},"roles":["author"],"index":20}
+,{"position":3002,"flags":{"skip":true},"roles":["title"],"index":21}
+,{"position":3003,"flags":{},"roles":["journal-title"],"index":22}
+,{"position":3043,"flags":{},"roles":["read-section"],"index":23}
+,{"position":3064,"flags":{"sideblock":true},"roles":["journal-title"],"index":24}
+,{"position":3065,"flags":{"skip":true},"roles":["title"],"index":25}
+,{"position":3066,"flags":{"sideblock":true},"roles":["paragraph"],"index":26}
+,{"position":3074,"flags":{"bold":true,"sideblock":true},"roles":["paragraph"],"index":27}
+,{"position":3075,"flags":{"bold":true,"sideblock":true},"roles":["paragraph"],"index":28}
+,{"position":4000,"flags":{"sideblock":true},"roles":["image-name","journal-title"],"index":29}
+,{"position":4002,"flags":{"skip":true},"roles":["title"],"index":30}
+,{"position":5002,"flags":{"skip":true},"roles":["map"],"index":31}
+,{"position":5004,"flags":{"skip":true},"roles":["map"],"index":32}
+,{"position":5018,"flags":{"skip":true},"roles":["map"],"index":33}
+,{"position":6003,"flags":{},"roles":["creature-title"],"index":34}
+,{"position":6006,"flags":{},"roles":["stat-block","pf2-tags"],"index":35}
+,{"position":6047,"flags":{"glyphs":true},"roles":["stat-block"],"index":36,"glyphs":{"[[reaction]]":"<span class='activity-icon'>R</span>","[reaction]":"<span class='activity-icon'>R</span>","[one-action]":"<span class='activity-icon'>A</span>","[two-actions]":"<span class='activity-icon'>D</span>","[three-actions]":"<span class='activity-icon'>T</span>","[three-actions]]":"<span class='activity-icon'>T</span>","[free-action]":"<span class='activity-icon'>F</span>"}}
+,{"position":7024,"flags":{"skip":true},"roles":["map"],"index":37}
+,{"position":8079,"flags":{},"roles":["journal-title"],"index":38}
+,{"position":8106,"flags":{},"roles":["paragraph"],"index":39}
+,{"position":12002,"flags":{"skip":true},"roles":["title"],"index":40}
+,{"position":12003,"flags":{"skip":true},"roles":["title"],"index":41}
+,{"position":12006,"flags":{"skip":true},"roles":["title"],"index":42}
+,{"position":12010,"flags":{"skip":true},"roles":["title"],"index":43}
+,{"position":12018,"flags":{"skip":true},"roles":["title"],"index":44}
+,{"position":13002,"flags":{"bold":true,"italic":true},"roles":["paragraph"],"index":45}
+,{"position":13003,"flags":{},"roles":["paragraph"],"index":46}
+,{"position":13006,"flags":{},"roles":["journal-title"],"index":47}
+,{"position":13016,"flags":{"bold":true,"italic":true},"roles":["paragraph"],"index":48}
+,{"position":13024,"flags":{},"roles":["paragraph"],"index":49}
+,{"position":14000,"flags":{"skip":true},"roles":[],"index":50}
+,{"position":14002,"flags":{"skip":true},"roles":[],"index":51}
+,{"position":14008,"flags":{"skip":true},"roles":[],"index":52}
+,{"position":14009,"size":0,"flags":{"skip":true},"roles":[],"index":53}
+,{"position":14013,"flags":{"skip":true},"roles":[],"index":54}
+,{"position":14016,"flags":{"skip":true},"roles":[],"index":55}
+,{"position":14026,"flags":{"skip":true},"roles":[],"index":56}
+,{"position":14043,"flags":{"skip":true},"roles":[],"index":57}
+];
+    static fonts_files = [ "fonts" ];
+
+    static images = [{"position":{"page":1,"index":67,"x":-1,"y":206},"idname":"cover","target":"assets"}
+,{"position":{"page":1,"index":1738,"x":-1,"y":147},"idname":"symbol","target":"assets"}
+,{"position":{"page":3,"index":3232,"x":336,"y":415},"idname":"station","target":"assets"}
+,{"position":{"page":4,"index":3156,"x":-1,"y":26},"idname":"screecher.actor","target":"actors"}
+,{"position":{"page":5,"index":2861,"x":43,"y":699},"idname":"hall","target":"scenes","transformation":{"rotation":90}}
+,{"position":{"page":6,"index":3799,"x":284,"y":50},"idname":"arvin.actor","target":"actors"}
+,{"position":{"page":7,"index":2888,"x":43,"y":51},"idname":"streets","target":"scenes"}
+,{"position":{"page":9,"index":3500,"x":391,"y":44},"idname":"hound.actor","target":"actors"}
+];
+    static images_files = [ "images" ];
+
+    static scenes_elements = [];
+    static scenes_elements_files = [];
+
+    static art_map = [];
+    static art_map_files = [];
+
+    static import_order = [ "sf2s2e01_cover", "sf2s2e01_adventure", "sf2s2e01_hall", "sf2s2e01_street"];
+    static items = new Map([[ "sf2s2e01_cover" ,{
+	"helyx": {
+		"idname": "sf2s2e01_cover",
+		"type": "JournalEntry",
+		"target": "sf2s2e01_journals"
+	},
+	"name": "00 {{{xylf 14 269 718 1 'an'}}}",
+	"pages": [
+		{
+			"helyx": {
+				"idname": "sf2s2e01_cover_image",
+				"type": "Page"
+			},
+			"name": "Cover [Image]",
+			"img": {
+				"src": "{{{imgpath 'cover'}}}"
+			}
+		}
+	]
+}]
+,[ "sf2s2e01_adventure" ,{
+	"helyx": {
+		"idname": "sf2s2e01_adventure",
+		"type": "JournalEntry",
+		"target": "sf2s2e01_journals"
+	},
+	"name": "01 Adventure",
+	"pages": [
+		{
+			"helyx": {
+				"type": "Page",
+				"idname": "sf2s2e01_003001",
+				"notes": "Where in the Universe?"
+			},
+			"name": "{{{xlf 3064 0 'an'}}}",
+			"blocks": [
+				{
+					"type": "journal-title",
+					"title": "{{{xlf 3064 0 'an'}}}",
+					"cr": ""
+				},
+				{
+					"type": "text",
+					"paragraphs": [
+						"{{{xl 3066 6}}}"
+					]
+				},
+				{
+					"type": "h1",
+					"title": "{{{xlf 3073 0 'an'}}}"
+				},
+				{
+					"type": "text",
+					"paragraphs": [
+						"{{{xl 3074 0}}}",
+						"{{{xl 3075 3}}}",
+						"{{{xl 3079 3}}}",
+						"{{{xl 3083 15}}}"
+					]
+				}
+			]
+		},
+		{
+			"helyx": {
+				"type": "Page",
+				"idname": "sf2s2e01_003003",
+				"notes": "Getting Started"
+			},
+			"name": "{{{xlf 3037 0 'an'}}}",
+			"blocks": [
+				{
+					"type": "journal-title",
+					"title": "{{{xlf 3037 0 'an'}}}",
+					"cr": ""
+				},
+				{
+					"type": "text",
+					"paragraphs": [
+						"{{{xl 3039 3}}}"
+					]
+				},
+				{
+					"type": "read-section",
+					"paragraphs": [
+						"{{{xl 3043 6}}}"
+					]
+				},
+				{
+					"type": "text",
+					"paragraphs": [
+						"{{{xl 3050 8}}}"
+					]
+				},
+				{
+					"type": "section",
+					"section": "npc",
+					"title": "{{{xlf 3060 0 'nd'}}}",
+					"blocks": [
+						{
+							"type": "text",
+							"paragraphs": [
+								"{{{xl 3059 4}}}{{{xl 3099 0}}}"
+							]
+						}
+					]
+				},
+				{
+					"type": "section",
+					"section": "npc",
+					"title": "{{{xlf 3100 0 'nd'}}}",
+					"blocks": [
+						{
+							"type": "text",
+							"paragraphs": [
+								"{{{xl 3100 5}}}"
+							]
+						}
+					]
+				},
+				{
+					"type": "section",
+					"section": "npc",
+					"title": "{{{xlf 3106 1 'nd'}}}",
+					"blocks": [
+						{
+							"type": "text",
+							"paragraphs": [
+								"{{{xl 3106 5}}}{{{xl 3113 1}}}"
+							]
+						}
+					]
+				}
+			]
+		},
+		{
+			"helyx": {
+				"type": "Page",
+				"idname": "sf2s2e01_004002",
+				"notes": "Message Received"
+			},
+			"name": "{{{xlf 4003 0 'an'}}}",
+			"blocks": [
+				{
+					"type": "journal-title",
+					"title": "{{{xlf 4003 0 'an'}}}",
+					"cr": ""
+				},
+				{
+					"type": "read-section",
+					"paragraphs": [
+						"{{{xl 4005 8}}}"
+					]
+				},
+				{
+					"type": "text",
+					"paragraphs": [
+						"{{{xl 4014 8}}}"
+					]
+				},
+				{
+					"type": "read-section",
+					"paragraphs": [
+						"{{{xl 4023 8}}}"
+					]
+				}
+			]
+		},
+		{
+			"helyx": {
+				"type": "Page",
+				"idname": "sf2s2e01_004001",
+				"notes": "Bloodspawned Screecher"
+			},
+			"name": "{{{xlf 4000 0 'an'}}} [Image]",
+			"img": {
+				"src": "{{{imgpath 'screecher.actor'}}}"
+			}
+		},
+		{
+			"helyx": {
+				"type": "Page",
+				"idname": "sf2s2e01_a00",
+				"notes": "A. Dispatch Center Low"
+			},
+			"name": "{{{xlf 4032 0 'an'}}}",
+			"blocks": [
+				{
+					"type": "journal-title",
+					"title": "{{{xlf 4032 0 'an'}}}",
+					"cr": "{{{xlf 4033 0 'an'}}}"
+				},
+				{
+					"type": "text",
+					"paragraphs": [
+						"{{{xl 4034 7}}}"
+					]
+				},
+				{
+					"type": "section",
+					"section": "hazard",
+					"title": "{{{xlf 4042 0 'nd'}}}",
+					"blocks": [
+						{
+							"type": "text",
+							"paragraphs": [
+								"{{{xl 4043 11}}}"
+							]
+						}
+					]
+				},
+				{
+					"type": "section",
+					"section": "encounter",
+					"title": "{{{xlf 4055 0 'nd'}}}",
+					"blocks": [
+						{
+							"type": "text",
+							"paragraphs": [
+								"{{{xl 4056 12}}}"
+							]
+						}
+					]
+				},
+				{
+					"type": "section",
+					"section": "npc",
+					"title": "{{{xlf 4069 0 'nd'}}}",
+					"blocks": [
+						{
+							"type": "text",
+							"paragraphs": [
+								"{{{xl 4070 17}}}"
+							]
+						}
+					]
+				},
+				{
+					"type": "section",
+					"section": "npc",
+					"title": "{{{xlf 4088 0 'nd'}}}",
+					"blocks": [
+						{
+							"type": "text",
+							"paragraphs": [
+								"{{{xl 4088 12}}}"
+							]
+						}
+					]
+				},
+				{
+					"type": "section",
+					"section": "npc",
+					"title": "{{{xlf 4101 0 'nd'}}}",
+					"blocks": [
+						{
+							"type": "text",
+							"paragraphs": [
+								"{{{xl 4101 9}}}"
+							]
+						}
+					]
+				},
+				{
+					"type": "section",
+					"section": "balance",
+					"title": "{{{xlf 6051 0 'an'}}}",
+					"blocks": [
+						{
+							"type": "text",
+							"paragraphs": [
+								"{{{xl 6053 3}}}",
+								"{{{xl 6057 2}}}",
+								"{{{xl 6060 2}}}"
+							]
+						}
+					]
+				},
+				{
+					"type": "creature",
+					"name": "{{{xlf 6003 0 'tn'}}}",
+					"statblock": [
+						"{{{pxl 6010 1}}}",
+						"{{{pxl 6012 1}}}",
+						"{{{pxl 6014 11}}}",
+						"{{{pxl 6026 3}}}{{{hr}}}",
+						"{{{pxl 6030 7}}}",
+						"{{{pxl 6038 5}}}{{{hr}}}",
+						"{{{pxl 6044 1}}}",
+						"{{{pxl 6046 4}}}",
+						"{{{pxl 6063 11}}}"
+					],
+					"tags": "{{{pf2tags 6006 'uncommon' 6007 'size' 6008 'ancestry' 6009 'ancestry'}}}",
+					"cr": "{{{xlf 6005 0 'n'}}}"
+				}
+			]
+		},
+		{
+			"helyx": {
+				"type": "Page",
+				"idname": "sf2s2e01_00600_img",
+				"notes": "Arvin"
+			},
+			"name": "{{{xlf 6000 0 'an'}}} [Image]",
+			"img": {
+				"src": "{{{imgpath 'arvin.actor'}}}"
+			}
+		},
+		{
+			"helyx": {
+				"type": "Page",
+				"idname": "sf2s2e01_006002",
+				"notes": "Move Out, Starfinders!"
+			},
+			"name": "{{{xlf 6075 0 'an'}}}",
+			"blocks": [
+				{
+					"type": "journal-title",
+					"title": "{{{xlf 6075 0 'an'}}}",
+					"cr": ""
+				},
+				{
+					"type": "text",
+					"paragraphs": [
+						"{{{xl 6076 4}}}"
+					]
+				},
+				{
+					"type": "read-section",
+					"paragraphs": [
+						"{{{xl 6081 3}}}",
+						"{{{xl 6085 2}}}",
+						"{{{xl 6088 4}}}"
+					]
+				},
+				{
+					"type": "text",
+					"paragraphs": [
+						"{{{xl 6093 7}}}",
+						"{{{xl 6101 0}}}{{{xl 6102 4}}}",
+						"{{{xl 6107 1}}}"
+					]
+				},
+				{
+					"type": "section",
+					"section": "treasure",
+					"title": "{{{xlf 6109 0 'nd'}}}",
+					"blocks": [
+						{
+							"type": "text",
+							"paragraphs": [
+								"{{{xl 6110 5}}}"
+							]
+						}
+					]
+				}
+			]
+		},
+		{
+			"helyx": {
+				"type": "Page",
+				"idname": "sf2s2e01_008001",
+				"notes": "B. Drifter’s End"
+			},
+			"name": "{{{xlf 8002 0 'an'}}}",
+			"blocks": [
+				{
+					"type": "journal-title",
+					"title": "{{{xlf 8002 0 'an'}}}",
+					"cr": ""
+				},
+				{
+					"type": "read-section",
+					"paragraphs": [
+						"{{{xl 8004 7}}}"
+					]
+				},
+				{
+					"type": "text",
+					"paragraphs": [
+						"{{{xl 8012 9}}}",
+						"{{{xl 8022 8}}}"
+					]
+				}
+			]
+		},
+		{
+			"helyx": {
+				"type": "Page",
+				"idname": "sf2s2e01_008002",
+				"notes": "District in Chaos"
+			},
+			"name": "{{{xlf 8031 0 'an'}}}",
+			"blocks": [
+				{
+					"type": "journal-title",
+					"title": "{{{xlf 8031 0 'an'}}}",
+					"cr": ""
+				},
+				{
+					"type": "text",
+					"paragraphs": [
+						"{{{xl 8032 15}}}",
+						"{{{xl 8048 30}}}"
+					]
+				}
+			]
+		},
+		{
+			"helyx": {
+				"type": "Page",
+				"idname": "sf2s2e01_009001",
+				"notes": "Bloodspawned Hound9"
+			},
+			"name": "{{{xlf 9000 1 'an'}}} [Image]",
+			"img": {
+				"src": "{{{imgpath 'hound.actor'}}}"
+			}
+		},
+		{
+			"helyx": {
+				"type": "Page",
+				"idname": "sf2s2e01_b01",
+				"notes": "[B01] Alley Rescue Trivial"
+			},
+			"name": "{{{xlf 8079 0 'anc'}}}",
+			"blocks": [
+				{
+					"type": "journal-title",
+					"title": "{{{xlf 8079 0 'anc'}}}",
+					"cr": "{{{xlf 8082 0 'an'}}}"
+				},
+				{
+					"type": "text",
+					"paragraphs": [
+						"{{{xl 8083 3}}}"
+					]
+				},
+				{
+					"type": "read-section",
+					"paragraphs": [
+						"{{{xl 8083 3}}}"
+					]
+				},
+				{
+					"type": "text",
+					"paragraphs": [
+						"{{{xl 8088 1}}}"
+					]
+				},
+				{
+					"type": "section",
+					"section": "npc",
+					"title": "{{{xlf 8090 0 'nd'}}}",
+					"blocks": [
+						{
+							"type": "text",
+							"paragraphs": [
+								"{{{xl 8091 6}}}"
+							]
+						}
+					]
+				},
+				{
+					"type": "section",
+					"section": "encounter",
+					"title": "{{{xlf 8098 0 'nd'}}}",
+					"blocks": [
+						{
+							"type": "text",
+							"paragraphs": [
+								"{{{xl 8099 5}}}"
+							]
+						}
+					]
+				},
+				{
+					"type": "text",
+					"paragraphs": [
+						"{{{xl 8106 0}}}"
+					]
+				},
+				{
+					"type": "creature",
+					"name": "{{{xlf 8107 0 'tn'}}}",
+					"statblock": [
+						"{{{pxl 8112 1}}}",
+						"{{{pxl 8114 1}}}",
+						"{{{pxl 8116 11}}}",
+						"{{{pxl 8128 3}}}{{{hr}}}",
+						"{{{pxl 8132 7}}}",
+						"{{{pxl 8140 5}}}",
+						"{{{pxl 8146 2}}}{{{hr}}}",
+						"{{{pxl 8149 1}}}",
+						"{{{pxl 8151 4}}}",
+						"{{{pxl 8156 4}}}",
+						"{{{pxl 8161 6}}}"
+					],
+					"tags": "{{{pf2tags 8108 'uncommon' 8109 'size' 8110 'ancestry' 8111 'ancestry'}}}"
+				},
+				{
+					"type": "section",
+					"section": "development",
+					"title": "{{{xlf 8168 0 'nd'}}}",
+					"blocks": [
+						{
+							"type": "text",
+							"paragraphs": [
+								"{{{xl 8169 36}}}"
+							]
+						}
+					]
+				},
+				{
+					"type": "section",
+					"section": "treasure",
+					"title": "{{{xlf 8206 0 'nd'}}}",
+					"blocks": [
+						{
+							"type": "text",
+							"paragraphs": [
+								"{{{xl 8207 4}}}"
+							]
+						}
+					]
+				}
+			]
+		},
+		{
+			"helyx": {
+				"type": "Page",
+				"idname": "sf2s2e01_b02",
+				"notes": "[B02] Main Street Low"
+			},
+			"name": "{{{xlf 9003 0 'anc'}}}",
+			"blocks": [
+				{
+					"type": "journal-title",
+					"title": "{{{xlf 9003 0 'anc'}}}",
+					"cr": "{{{xlf 9005 1 'n'}}}"
+				},
+				{
+					"type": "read-section",
+					"paragraphs": [
+						"{{{xl 9007 7}}}",
+						"{{{xl 9015 3}}}"
+					]
+				},
+				{
+					"type": "section",
+					"section": "npc",
+					"title": "{{{xlf 9019 0 'nd'}}}",
+					"blocks": [
+						{
+							"type": "text",
+							"paragraphs": [
+								"{{{xl 9020 9}}}"
+							]
+						}
+					]
+				},
+				{
+					"type": "section",
+					"section": "npc",
+					"title": "{{{xlf 9030 0 'nd'}}}",
+					"blocks": [
+						{
+							"type": "text",
+							"paragraphs": [
+								"{{{xl 9030 6}}}{{{xl 9050 1}}}",
+								"{{{xl 9052 11}}}"
+							]
+						}
+					]
+				},
+				{
+					"type": "section",
+					"section": "encounter",
+					"title": "{{{xlf 9064 0 'nd'}}}",
+					"blocks": [
+						{
+							"type": "text",
+							"paragraphs": [
+								"{{{xl 9065 13}}}"
+							]
+						}
+					]
+				},
+				{
+					"type": "creature",
+					"name": "{{{xlf 9079 0 'tn'}}}",
+					"statblock": [
+						"{{{pxl 9083 1}}}"
+					],
+					"cr": "{{{xlf 9081 1 'n'}}}"
+				},
+				{
+					"type": "creature",
+					"name": "{{{xlf 9085 0 'tn'}}}",
+					"statblock": [
+						"{{{pxl 9089 0}}}"
+					],
+					"cr": "{{{xlf 9087 1 'n'}}}",
+					"amount": "3"
+				},
+				{
+					"type": "section",
+					"section": "treasure",
+					"title": "{{{xlf 9090 0 'nd'}}}",
+					"blocks": [
+						{
+							"type": "text",
+							"paragraphs": [
+								"{{{xl 9091 6}}}"
+							]
+						}
+					]
+				}
+			]
+		},
+		{
+			"helyx": {
+				"type": "Page",
+				"idname": "sf2s2e01_b03",
+				"notes": "[B03] Rooftop Rift Trivial"
+			},
+			"name": "{{{xlf 9098 0 'anc'}}}",
+			"blocks": [
+				{
+					"type": "journal-title",
+					"title": "{{{xlf 9098 0 'anc'}}}",
+					"cr": "{{{xlf 9100 1 '0'}}}"
+				},
+				{
+					"type": "read-section",
+					"paragraphs": [
+						"{{{xl 9102 4}}}"
+					]
+				},
+				{
+					"type": "section",
+					"section": "hazard",
+					"title": "{{{xlf 9107 0 'nd'}}}",
+					"blocks": [
+						{
+							"type": "text",
+							"paragraphs": [
+								"{{{xl 9108 2}}}",
+								"{{{xl 10002 12}}}",
+								"{{{xl 10015 3}}}",
+								"{{{xl 10019 3}}}",
+								"{{{xl 10023 1}}}",
+								"{{{xl 10025 1}}}"
+							]
+						}
+					]
+				},
+				{
+					"type": "section",
+					"section": "development",
+					"title": "{{{xlf 10015 0 'nd'}}}",
+					"blocks": [
+						{
+							"type": "text",
+							"paragraphs": [
+								"{{{xl 10016 10}}}"
+							]
+						}
+					]
+				},
+				{
+					"type": "hazard",
+					"name": "{{{xlf 10027 2 'tn'}}}",
+					"statblock": [
+						"{{{pxl 10035 1}}}",
+						"{{{pxl 10037 2}}}",
+						"{{{hr}}}",
+						"{{{pxl 10040 6}}}",
+						"{{{pxl 10047 13}}}",
+						"{{{helyx 'details' 1}}}{{{pxl 193157 1}}}{{{pxl 10061 1}}}{{{pxl 10063 1}}}{{{pxl 10065 1}}}{{{pxl 10067 3}}}{{{helyx 'details' 0}}}",
+						"{{{hr}}}",
+						"{{{pxl 10071 8}}}",
+						"{{{pxl 10080 2}}}"
+					],
+					"tags": "{{{pf2tags 10030 'uncommon' 10031 'ancestry' 10032 'ancestry' 10033 'ancestry' 10034 'ancestry'}}}"
+				},
+				{
+					"type": "section",
+					"section": "skill-arcana",
+					"title": "{{{xlf 10083 0 'nd'}}}",
+					"blocks": [
+						{
+							"type": "text",
+							"paragraphs": [
+								"{{{xl 10084 6}}}"
+							]
+						}
+					]
+				}
+			]
+		},
+		{
+			"helyx": {
+				"type": "Page",
+				"idname": "sf2s2e01_b04",
+				"notes": "[B04] Planar Requisitions Office Branch"
+			},
+			"name": "{{{xlf 10091 0 'anc'}}}",
+			"blocks": [
+				{
+					"type": "journal-title",
+					"title": "{{{xlf 10091 0 'anc'}}}",
+					"cr": ""
+				},
+				{
+					"type": "read-section",
+					"paragraphs": [
+						"{{{xl 10092 3}}}"
+					]
+				},
+				{
+					"type": "text",
+					"paragraphs": [
+						"{{{xl 10097 5}}}"
+					]
+				},
+				{
+					"type": "section",
+					"section": "npc",
+					"title": "{{{xlf 10103 0 'nd'}}}",
+					"blocks": [
+						{
+							"type": "text",
+							"paragraphs": [
+								"{{{xl 10104 3}}}",
+								"{{{xl 10108 3}}}",
+								"{{{xl 10112 8}}}"
+							]
+						}
+					]
+				},
+				{
+					"type": "section",
+					"section": "treasure",
+					"title": "{{{xlf 10121 0 'nd'}}}",
+					"blocks": [
+						{
+							"type": "text",
+							"paragraphs": [
+								"{{{xl 10122 7}}}"
+							]
+						}
+					]
+				}
+			]
+		},
+		{
+			"helyx": {
+				"type": "Page",
+				"idname": "sf2s2e01_b05",
+				"notes": "[B05] Go-mart"
+			},
+			"name": "{{{xlf 10130 0 'anc'}}}",
+			"blocks": [
+				{
+					"type": "journal-title",
+					"title": "{{{xlf 10130 0 'anc'}}}",
+					"cr": ""
+				},
+				{
+					"type": "read-section",
+					"paragraphs": [
+						"{{{xl 10131 6}}}"
+					]
+				},
+				{
+					"type": "text",
+					"paragraphs": [
+						"{{{xl 10138 3}}}"
+					]
+				},
+				{
+					"type": "section",
+					"section": "npc",
+					"title": "{{{xlf 10142 0 'nd'}}}",
+					"blocks": [
+						{
+							"type": "text",
+							"paragraphs": [
+								"{{{xl 10143 8}}}",
+								"{{{xl 10152 0}}}{{{xl 10153 11}}}"
+							]
+						}
+					]
+				},
+				{
+					"type": "section",
+					"section": "treasure",
+					"title": "{{{xlf 10165 0 'nd'}}}",
+					"blocks": [
+						{
+							"type": "text",
+							"paragraphs": [
+								"{{{xl 10166 0}}}"
+							]
+						}
+					]
+				}
+			]
+		},
+		{
+			"helyx": {
+				"type": "Page",
+				"idname": "sf2s2e01_b06",
+				"notes": "[B06] Street Concert"
+			},
+			"name": "{{{xlf 11002 0 'anc'}}}",
+			"blocks": [
+				{
+					"type": "journal-title",
+					"title": "{{{xlf 11002 0 'anc'}}}",
+					"cr": ""
+				},
+				{
+					"type": "read-section",
+					"paragraphs": [
+						"{{{xl 11003 5}}}"
+					]
+				},
+				{
+					"type": "text",
+					"paragraphs": [
+						"{{{xl 11009 5}}}"
+					]
+				},
+				{
+					"type": "section",
+					"section": "npc",
+					"title": "{{{xlf 11015 0 'nd'}}}",
+					"blocks": [
+						{
+							"type": "text",
+							"paragraphs": [
+								"{{{xl 11016 17}}}",
+								"{{{xl 11034 0}}}{{{xl 11035 0}}}"
+							]
+						}
+					]
+				},
+				{
+					"type": "section",
+					"section": "treasure",
+					"title": "{{{xlf 11036 0 'nd'}}}",
+					"blocks": [
+						{
+							"type": "text",
+							"paragraphs": [
+								"{{{xl 11037 1}}}"
+							]
+						}
+					]
+				}
+			]
+		},
+		{
+			"helyx": {
+				"type": "Page",
+				"idname": "sf2s2e01_011002",
+				"notes": "A Display of Gratitude"
+			},
+			"name": "{{{xlf 11039 0 'an'}}}",
+			"blocks": [
+				{
+					"type": "journal-title",
+					"title": "{{{xlf 11039 0 'an'}}}",
+					"cr": ""
+				},
+				{
+					"type": "text",
+					"paragraphs": [
+						"{{{xl 11040 7}}}"
+					]
+				},
+				{
+					"type": "read-section",
+					"paragraphs": [
+						"{{{xl 11048 6}}}"
+					]
+				},
+				{
+					"type": "text",
+					"paragraphs": [
+						"{{{xl 11055 0}}}{{{xl 11057 3}}}"
+					]
+				}
+			]
+		},
+		{
+			"helyx": {
+				"type": "Page",
+				"idname": "sf2s2e01_011003",
+				"notes": "Conclusion"
+			},
+			"name": "{{{xlf 11061 0 'an'}}}",
+			"blocks": [
+				{
+					"type": "journal-title",
+					"title": "{{{xlf 11061 0 'an'}}}",
+					"cr": ""
+				},
+				{
+					"type": "text",
+					"paragraphs": [
+						"{{{xl 11063 8}}}",
+						"{{{xl 11072 6}}}",
+						"{{{xl 11079 8}}}"
+					]
+				},
+				{
+					"type": "read-section",
+					"paragraphs": [
+						"{{{xl 11088 12}}}"
+					]
+				},
+				{
+					"type": "text",
+					"paragraphs": [
+						"{{{xl 11101 3}}}"
+					]
+				}
+			]
+		},
+		{
+			"helyx": {
+				"type": "Page",
+				"idname": "sf2s2e01_011004",
+				"notes": "Reporting Notes"
+			},
+			"name": "{{{xlf 11105 0 'an'}}}",
+			"blocks": [
+				{
+					"type": "journal-title",
+					"title": "{{{xlf 11105 0 'an'}}}",
+					"cr": ""
+				},
+				{
+					"type": "text",
+					"paragraphs": [
+						"{{{xl 11106 6}}}"
+					]
+				}
+			]
+		}
+	]
+}]
+,[ "sf2s2e01_hall" ,{
+	"helyx": {
+		"idname": "sf2s2e01_hall",
+		"target": "sf2s2e01_scenes",
+		"type": "Scene"
+	},
+	"name": "{{{xylf 7 59 671 1 'an'}}}",
+	"includes": [
+		"modules/sf2-pdf-en-import/datas/imports/sf2s2e01/hall.json"
+	],
+	"tokens": [],
+	"notes": [
+		{
+			"helyx": {
+				"idname": "sf2s2e01_a00"
+			},
+			"entryId": "GV1oIEpF697zCmF5",
+			"pageId": "V43Hxa5IFpymRnAH",
+			"global": false,
+			"levels": [
+				"defaultLevel0000"
+			],
+			"x": 750,
+			"y": 950,
+			"elevation": 0,
+			"sort": 0,
+			"iconSize": 80,
+			"texture": {
+				"tint": "#ffffff",
+				"src": "icons/svg/book.svg",
+				"anchorX": 0.5,
+				"anchorY": 0.5,
+				"fit": "contain",
+				"scaleX": 1,
+				"scaleY": 1,
+				"alphaThreshold": 0
+			},
+			"text": "",
+			"fontFamily": "",
+			"fontSize": 32,
+			"textColor": "#ffffff",
+			"textAnchor": 1,
+			"_id": "KJYQS4DqXqstxmgJ",
+			"locked": false,
+			"flags": {}
+		}
+	]
+}]
+,[ "sf2s2e01_street" ,{
+	"helyx": {
+		"idname": "sf2s2e01_street",
+		"target": "sf2s2e01_scenes",
+		"type": "Scene"
+	},
+	"name": "{{{xylf 7 59 671 1 'an'}}}",
+	"includes": [
+		"modules/sf2-pdf-en-import/datas/imports/sf2s2e01/street.json"
+	],
+	"tokens": [],
+	"notes": [
+		{
+			"helyx": {
+				"idname": "sf2s2e01_b01"
+			},
+			"entryId": "GV1oIEpF697zCmF5",
+			"pageId": "TvmRqg2TVV8TDqWc",
+			"global": false,
+			"levels": [
+				"defaultLevel0000"
+			],
+			"x": 2250,
+			"y": 3015,
+			"elevation": 0,
+			"sort": 0,
+			"iconSize": 40,
+			"texture": {
+				"tint": "#ffffff",
+				"src": "icons/svg/book.svg",
+				"anchorX": 0.5,
+				"anchorY": 0.5,
+				"fit": "contain",
+				"scaleX": 1,
+				"scaleY": 1,
+				"alphaThreshold": 0
+			},
+			"text": "",
+			"fontFamily": "",
+			"fontSize": 32,
+			"textColor": "#ffffff",
+			"textAnchor": 1,
+			"_id": "Em12x3dIr8C2mPBH",
+			"locked": false,
+			"flags": {}
+		},
+		{
+			"helyx": {
+				"idname": "sf2s2e01_b02"
+			},
+			"entryId": "GV1oIEpF697zCmF5",
+			"pageId": "gKoWXWROdH8LurYF",
+			"global": false,
+			"levels": [
+				"defaultLevel0000"
+			],
+			"x": 1935,
+			"y": 2025,
+			"elevation": 0,
+			"sort": 1,
+			"iconSize": 40,
+			"texture": {
+				"tint": "#ffffff",
+				"src": "icons/svg/book.svg",
+				"anchorX": 0.5,
+				"anchorY": 0.5,
+				"fit": "contain",
+				"scaleX": 1,
+				"scaleY": 1,
+				"alphaThreshold": 0
+			},
+			"text": "",
+			"fontFamily": "",
+			"fontSize": 32,
+			"textColor": "#ffffff",
+			"textAnchor": 1,
+			"_id": "ahj9yhhXHIXH5FiV",
+			"locked": false,
+			"flags": {}
+		},
+		{
+			"helyx": {
+				"idname": "sf2s2e01_b03"
+			},
+			"entryId": "GV1oIEpF697zCmF5",
+			"pageId": "xIKMaF3YMHthOEVJ",
+			"global": false,
+			"levels": [
+				"defaultLevel0000"
+			],
+			"x": 1935,
+			"y": 1575,
+			"elevation": 0,
+			"sort": 2,
+			"iconSize": 40,
+			"texture": {
+				"tint": "#ffffff",
+				"src": "icons/svg/book.svg",
+				"anchorX": 0.5,
+				"anchorY": 0.5,
+				"fit": "contain",
+				"scaleX": 1,
+				"scaleY": 1,
+				"alphaThreshold": 0
+			},
+			"text": "",
+			"fontFamily": "",
+			"fontSize": 32,
+			"textColor": "#ffffff",
+			"textAnchor": 1,
+			"_id": "076nJdaeYugQCViQ",
+			"locked": false,
+			"flags": {}
+		},
+		{
+			"helyx": {
+				"idname": "sf2s2e01_b04"
+			},
+			"entryId": "GV1oIEpF697zCmF5",
+			"pageId": "ZvwlyDFWPMArBrET",
+			"global": false,
+			"levels": [
+				"defaultLevel0000"
+			],
+			"x": 2610,
+			"y": 1260,
+			"elevation": 0,
+			"sort": 3,
+			"iconSize": 40,
+			"texture": {
+				"tint": "#ffffff",
+				"src": "icons/svg/book.svg",
+				"anchorX": 0.5,
+				"anchorY": 0.5,
+				"fit": "contain",
+				"scaleX": 1,
+				"scaleY": 1,
+				"alphaThreshold": 0
+			},
+			"text": "",
+			"fontFamily": "",
+			"fontSize": 32,
+			"textColor": "#ffffff",
+			"textAnchor": 1,
+			"_id": "xNLiZybGR8mffbNx",
+			"locked": false,
+			"flags": {}
+		},
+		{
+			"helyx": {
+				"idname": "sf2s2e01_b05"
+			},
+			"entryId": "GV1oIEpF697zCmF5",
+			"pageId": "of6MRpDzBEVzAH2b",
+			"global": false,
+			"levels": [
+				"defaultLevel0000"
+			],
+			"x": 1125,
+			"y": 1215,
+			"elevation": 0,
+			"sort": 4,
+			"iconSize": 40,
+			"texture": {
+				"tint": "#ffffff",
+				"src": "icons/svg/book.svg",
+				"anchorX": 0.5,
+				"anchorY": 0.5,
+				"fit": "contain",
+				"scaleX": 1,
+				"scaleY": 1,
+				"alphaThreshold": 0
+			},
+			"text": "",
+			"fontFamily": "",
+			"fontSize": 32,
+			"textColor": "#ffffff",
+			"textAnchor": 1,
+			"_id": "X8oMXKuL3UGbVsU5",
+			"locked": false,
+			"flags": {}
+		},
+		{
+			"helyx": {
+				"idname": "sf2s2e01_b06"
+			},
+			"entryId": "GV1oIEpF697zCmF5",
+			"pageId": "lpDhB6UYKy9XaSJh",
+			"global": false,
+			"levels": [
+				"defaultLevel0000"
+			],
+			"x": 945,
+			"y": 3015,
+			"elevation": 0,
+			"sort": 5,
+			"iconSize": 40,
+			"texture": {
+				"tint": "#ffffff",
+				"src": "icons/svg/book.svg",
+				"anchorX": 0.5,
+				"anchorY": 0.5,
+				"fit": "contain",
+				"scaleX": 1,
+				"scaleY": 1,
+				"alphaThreshold": 0
+			},
+			"text": "",
+			"fontFamily": "",
+			"fontSize": 32,
+			"textColor": "#ffffff",
+			"textAnchor": 1,
+			"_id": "ADzmJjFoIwUoKJyo",
+			"locked": false,
+			"flags": {}
+		}
+	]
+}]
+]);
+    static itemsFiles =     
+    [ 
+        "journals/00_cover", "journals/01_adventure",
+        "scenes/hall", "scenes/street"
+    ]; 
+
+    static folders = 
+    [ 
+        // journals
+        { idname: "sf2s2e01_journals", name: "SF2S1E01 - {{{xylf 14 269 718 1 'an'}}}", type: "JournalEntry" },
+
+        // Actors
+        { idname: "sf2s2e01_actors", name: "SF2S2E01 - {{{xylf 14 269 718 1 'an'}}}", type: "Actor" },     
+        { idname: "sf2s2e01_bestiary", name: "Bestiary", parent: "sf2s2e01_actors" },  
+        { idname: "sf2s2e01_hazards", name: "Hazards", parent: "sf2s2e01_actors" },    
+        { idname: "sf2s2e01_roleplay_npcs", name: "Roleplay NPCs", parent: "sf2s2e01_actors" },      
+
+        // Scenes
+        { idname: "sf2s2e01_scenes", name: "SF2S2E01 - {{{xylf 14 269 718 1 'an'}}}", type: "Scene" },  
+
+    ];
+
+    static fixes(str, index)
+    {
+        return str.replace("�", ".").replace("�", ".");
+    }  
+}
+
+
 export class Helyx {
 
 constructor() 
@@ -30807,8 +32454,10 @@ constructor()
     this.adventures = [];
     this.tokens = new Map();
 
-            this.adventures.push(new HelyxAdventure (this, {descriptor: HelyxSF2S1E01, idname: "sf2s1e01-invasion-s-edge", datas_directory: "modules/sf2-pdf-en-import/datas", shared_resources_directory: "modules/sf2-pdf-en-import/datas", origin: "sf2-pdf-en-import", export_directory: "sf2s1e01-invasion-s-edge"}));
-        this.adventures.push(new HelyxAdventure (this, {descriptor: HelyxSF2S1E03, idname: "sf2s1e03-disaster-at-dreamlink-labs", datas_directory: "modules/sf2-pdf-en-import/datas", shared_resources_directory: "modules/sf2-pdf-en-import/datas", origin: "sf2-pdf-en-import", export_directory: "sf2s1e03-disaster-at-dreamlink-labs"}));
+            this.adventures.push(new HelyxAdventure (this, {descriptor: HelyxSF2S1E01, idname: "sf2s1e01", datas_directory: "modules/sf2-pdf-en-import/datas", shared_resources_directory: "modules/sf2-pdf-en-import/datas", origin: "sf2-pdf-en-import", export_directory: "sf2s1e01"}));
+        this.adventures.push(new HelyxAdventure (this, {descriptor: HelyxSF2S1E03, idname: "sf2s1e03", datas_directory: "modules/sf2-pdf-en-import/datas", shared_resources_directory: "modules/sf2-pdf-en-import/datas", origin: "sf2-pdf-en-import", export_directory: "sf2s1e03"}));
+        this.adventures.push(new HelyxAdventure (this, {descriptor: HelyxSF2S1E14, idname: "sf2s1e14", datas_directory: "modules/sf2-pdf-en-import/datas", shared_resources_directory: "modules/sf2-pdf-en-import/datas", origin: "sf2-pdf-en-import", export_directory: "sf2s1e14"}));
+        this.adventures.push(new HelyxAdventure (this, {descriptor: HelyxSF2S2E01, idname: "sf2s2e01", datas_directory: "modules/sf2-pdf-en-import/datas", shared_resources_directory: "modules/sf2-pdf-en-import/datas", origin: "sf2-pdf-en-import", export_directory: "sf2s2e01"}));
         
 
     
@@ -30863,11 +32512,9 @@ when_import_pdf()
     let state_08_check_deps             = new StateCheckDependencies(this.machine, {name: 'check_deps', index: 8, next_state: 17});
     let state_17_load_files             = new StateLoadFiles(this.machine, {name: 'load_files', index: 17, next_state: 19});
     let state_19_ready_summary          = new StateReadySummary(this.machine, {name: 'ready_summary', index: 19, next_state: 20});
-    let state_20_adventure_summary      = new StateAdventureSummary(this.machine, {name: 'summary', index: 20, next_state: 6, cancel_state: 18});
+    let state_20_adventure_summary      = new StateAdventureSummary(this.machine, {name: 'summary', index: 20, next_state: 16, cancel_state: 18});
 
     let state_05_unknown_adventure      = new StateUnknownAdventure(this.machine, {name: 'unknown_adventure', index: 5 });
-    let state_06_check_drm              = new StateCheckDRM(this.machine, {name: 'check_drm', index: 6, drm_ok_state: 16, drm_ko_state: 7});
-    let state_07_drm_failed             = new StateDRMFailed(this.machine, {name: 'drm_failed', index: 7 });
 
     let state_16_colorize_text         = new StateColorizeText(this.machine, {name: 'color_assigner', index: 16, next_state: 9});
 
@@ -30887,7 +32534,7 @@ when_import_pdf()
     this.machine.states 
     ([ 
         state_00_select_pdf_dialog, state_01_setup_import_dialog, state_02_open_pdf, state_03_read_pages, state_04_identify_adventure, 
-        state_05_unknown_adventure, state_06_check_drm, state_07_drm_failed, state_08_check_deps, state_09_check_conversions, 
+        state_05_unknown_adventure, null, null, state_08_check_deps, state_09_check_conversions, 
         state_11_load_items, state_12_pre_import, state_13_import_folders,
         state_14_import_images, state_15_import_items, state_16_colorize_text, state_17_load_files , 
         state_18_compendium_art,
@@ -30940,9 +32587,7 @@ async load_art_map_file(descriptor_)
 // Initialize the array of tokens from token_files
 async init_tokens()
 {
-    if(game.helyx_settings == null)
-    { return; }
-
+    /*
     const adventures = this.config.modeMaker ? game.helyx_settings.descriptors.values() : this.adventures;
     const mode_maker = this.config.modeMaker ?? false;
 
@@ -30953,6 +32598,7 @@ async init_tokens()
         const descriptor   = mode_maker ? adv.jsclass : adv.descriptor;
         await this.load_art_map_file(descriptor);
     }
+    */
 
     //let my_declaration = game.modules.entries().get(this.config.moduleName);
     //my_declaration.flags.[this.config.moduleName]["sfrpg-art"] = global_art_map;
@@ -30962,11 +32608,19 @@ async init_tokens()
 }
 Hooks.on("renderSettings", function(app_, html_)
 {
-    if(game.user.isGM)
-    {    
-            const s=document.createElement("template");
+    if(!(game.release.generation>=13))
+    { return; }
+
+    if(!(app_ instanceof CONFIG.ui.settings))
+    { return; }
+
+    if(!game.user.isGM)
+    {  return; }
+
+
+    const s=document.createElement("template");
         
-            s.innerHTML=
+    s.innerHTML=
                 '<section class="flexcol" id="helyx">\n'+
                   '<h4 class="divider">Helyx</h4>\n' +    
                     '<button type="button" data-action="helyx-import-pdf">\n' +
@@ -30974,30 +32628,13 @@ Hooks.on("renderSettings", function(app_, html_)
                     '</button>\n'+            
                  '</section>';
              
-            Object.assign
-            (
-                app_.options.actions,
-                {
-                    "helyx-import-pdf":()=>game.helyx.when_import_pdf()
-                }
-            );
+    Object.assign
+    (
+        app_.options.actions,
+        { "helyx-import-pdf":()=>game.helyx.when_import_pdf() }
+    );
                 
-            html_.querySelector("section.info").after(s.content);
-
-
-        const importButton=$(
-            '<button id="helyx-import-pdf" data-action="helyx-import-pdf">'
-            + '<i class="fas fa-fire"></i> Helyx - Import PDF'
-            + '</button>'
-            
-            );
-            html_.find("#settings-game").prepend(importButton);
-        importButton.on
-        (
-            "click",
-            (()=>{ game.helyx.when_import_pdf(); })
-        );    
-    }    
+    html_.querySelector("section.info").after(s.content);
 
 })
 
@@ -31014,6 +32651,7 @@ Hooks.on("ready", async function ()
     h.config.extractPDFDetails = false;
     h.acceptUnknowPdf = false;
     h.config.moduleName="sf2-pdf-en-import";
+    h.config.forge = game.modules.has("forge-vtt");
 
     Deid.Log.FILTER.report = false;
     Deid.Log.FILTER.error  = false;

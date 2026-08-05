@@ -9,5 +9,9 @@ A Foundry module to import pdfs for Starfinder 2
 
 ## Society Season 1
 
-- E1 : Invasion's Edge (maps and actors only)
-- E3 : Disaster at Dreamlink Labs (maps and actors only)
+- E01 : Invasion's Edge (maps and actors only)
+- E03 : Disaster at Dreamlink Labs (maps and actors only)
+
+## Society Season 2
+
+- E01 : The First Cut
