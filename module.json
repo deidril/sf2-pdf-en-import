@@ -14,27 +14,19 @@
         "flags": {}
       }
     ],
-    "version": "6.02",
-  "compatibility": {
-    "minimum": "13.345",
-    "verified": "13.345",
-    "maximum": "13.999"
-  },
+    "version": "7.03",
+    "compatibility": { "minimum": "14", "verified": "14", "maximum": "14.999" },
   "styles": [
     "css/common/dialogs.css", "css/common/helyx.css", "css/common/helyx-conversions.css", "css/common/helyx-sections.css", 
     "css/common/summary.css",
-    "css/pdfs/adventures.css", "css/pdfs/bounties.css", "css/pdfs/pfs3.css", "css/pdfs/pfs4.css",
     "css/pf2e/statblock.css", "css/pf2e/system.css"
   ],
-    "relationships": {
+    "relationships": 
+    {
         "systems": 
         [
-           { "id": "pf2e", "type": "system", "compatibility": { "minimum": "7.8", "verified": "7.8" } }
-        ],
-        "requires": 
-        [
-            { "id": "sf2e-anachronism", "type": "module", "compatibility": { "minimum": "1.3.3", "verified": "1.3.3" } }
-        ]
+          { "id": "sf2e", "type": "system", "compatibility": { "minimum": "1.4.0", "verified": "1.4.0" } }
+       ]
     },
     "esmodules": [
       "src/helyx.bundle.js"
@@ -51,6 +43,6 @@
     ],
 
     "url": "https://github.com/deidril/sf2-pdf-en-import",
-    "manifest": "https://github.com/deidril/sf2-pdf-en-import/releases/download/6.02/module.json",
-    "download": "https://github.com/deidril/sf2-pdf-en-import/releases/download/6.02/sf2-pdf-en-import-6.02.zip"
+    "manifest": "https://github.com/deidril/sf2-pdf-en-import/releases/download/7.03/module.json",
+    "download": "https://github.com/deidril/sf2-pdf-en-import/releases/download/7.03/sf2-pdf-en-import-7.03.zip"
   }

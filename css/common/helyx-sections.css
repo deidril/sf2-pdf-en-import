@@ -614,6 +614,18 @@
     background: linear-gradient(rgb(101, 139, 168),rgb(0, 97, 195));
 }
 
+.window-content .helyx-content div.helyx-block-section-skill-nature
+{
+    border: 4px solid #14428c;
+    background: #f8f8eb    
+}
+
+.helyx-header-skill-nature
+{
+    border-bottom: 4px solid #14428c;
+    background: linear-gradient(rgb(101, 139, 168),rgb(0, 97, 195));
+}
+
 .window-content .helyx-content div.helyx-block-section-skill-perception
 {
     border: 4px solid #14428c;
@@ -662,4 +674,15 @@
     background: linear-gradient(rgb(101, 139, 168),rgb(0, 97, 195));
 }
 
+.window-content .helyx-content div.helyx-block-section-skill-society
+{
+    border: 4px solid #14428c;
+    background: #f8f8eb    
+}
+
+.helyx-header-skill-society
+{
+    border-bottom: 4px solid #14428c;
+    background: linear-gradient(rgb(101, 139, 168),rgb(0, 97, 195));
+}
 
