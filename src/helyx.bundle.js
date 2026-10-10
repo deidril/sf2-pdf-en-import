@@ -20340,6 +20340,9 @@ export class HelyxEntity
     /// @brief      Redefinition of the name
     #name           = null;
 
+    /// @brief     External model name if artwork/token is not defined
+    #model          = null;
+
     /// @brief      Redefinition of the artwork image
     #img            = null;
 
@@ -20372,6 +20375,7 @@ export class HelyxEntity
     get name  ()     { return this.#name; }
     get img()        { return this.#img; }
     get token()      { return this.#token; }
+    get model()      { return this.#model; }
     get description() { return this.#description; }
     get rarity()     { return this.#rarity; }
 
@@ -20382,6 +20386,7 @@ export class HelyxEntity
             case 'helyx': this.#helyx = Deid.build(HelyxHeader, value_ ); break;
             case 'img' :  this.#img = Deid.build(HelyxImageReference, value_ ); break;
             case 'token' : this.#token = Deid.build(HelyxImageReference, value_ ); break;
+            case 'model' : this.#model = value_; break;
             case 'name'  : this.#name   = HelyxContent.build(value_); break;
             case 'description' : this.#description = HelyxContent.build(value_); break;
             case 'rarity' : this.#rarity = value_; break;
@@ -20403,6 +20408,7 @@ export class HelyxEntity
         output_.any('description',this.#description);
         output_.field('img', this.#img);
         output_.field('token', this.#token);
+        output_.field('model', this.#model);
         return output_.inlined_attributes(this,  ['rarity']);
     }      
 }
@@ -24996,12 +25002,12 @@ export class HelyxBlockRoomSection extends HelyxPart
 
             case 'skill-arcana' : return "icons/magic/symbols/runes-triangle-blue.webp";
             case 'skill-athletism' : return "icons/skills/melee/unarmed-punch-fist-yellow-red.webp";
-            case 'skill-computer' : return Deid.compile("{{{imgsrc 'shared' 'icons/computer.webp'}}}");
+            case 'skill-computer' : return "icons/tools/tech/mouse-computer.webp";
             case 'skill-crafting' : return "icons/skills/trades/smithing-anvil-silver-red.webp";
             case 'skill-culture' : return "icons/sundries/books/book-stack.webp";
             case 'skill-diplomacy' : return "icons/skills/social/diplomacy-handshake-yellow.webp";
             case "skill-intimidation" : return "icons/skills/social/intimidation-impressing.webp";
-            case "skill-life-science" : return Deid.compile("{{{imgsrc 'shared' 'icons/life-science.webp'}}}");
+            case "skill-life-science" : return "icons/tools/medical/mouse-medication-pills-bottle.webp"
             case "skill-nature": return "icons/environment/wilderness/tree-ash.webp";
             case "skill-perception": return "icons/magic/perception/eye-ringed-green.webp"
             case "skill-performance" : return "icons/tools/instruments/harp-yellow-teal.webp";
@@ -25034,8 +25040,8 @@ export class HelyxBlockRoomSection extends HelyxPart
             case 'healing' : return "icons/magic/life/ankh-gold-blue.webp";
             case 'darkness': return "icons/magic/unholy/silhouette-evil-horned-giant.webp";
 
-            case 'streamed' : return Deid.compile("{{{imgsrc 'shared' 'icons/online-avatar.webp'}}}");
-            case 'starship' : return Deid.compile("{{{imgsrc 'shared' 'icons/starship.webp'}}}");
+            case 'streamed' : return"icons/tools/tech/camera.webp";
+            case 'starship' : return "icons/commodities/tech/engine-thrust-jet.webp";
 
 
             default: 
@@ -27008,6 +27014,7 @@ export class HelyxContext
     import_images = true;
     import_mode = "normal";        // Values are normal or raw
     extract_all_images = false;
+    model = null;
     
     pdf = {};
     helyx = {};
@@ -27305,6 +27312,19 @@ export class HelyxContext
         if(!datas.title) { datas.title = {}; }
 
         return datas;
+    }
+
+    resolve_model(model_, type_)
+    {
+        
+        if(this.model)
+        {
+            let m = game.helyx_externals?.tokens?.[this.model];
+            if(m)
+            if(m[model_])    
+            { return m.directory + "/" + m[model_][type_]; }
+        }
+        return null;
     }
 
     resolve_image(img_)
@@ -29331,8 +29351,6 @@ async #import_from_compendium(item_, source_, entity_type_)
             let other_names = [ _item.helyx.sourceName ];
             if(_item.img_name)
             { other_names.push(_item.img_name); }
-
-            //await this.setPDF2FoundryToken(model, other_names); 
         }
         
 
@@ -29352,6 +29370,16 @@ async #import_from_compendium(item_, source_, entity_type_)
             {
                 _model.prototypeToken.height = _item.height;
             }
+        }
+
+        // Model
+        if(_item.model != null) 
+        {             
+            let img = this.context.resolve_model(_item.model, "img"); 
+            if(img != null) { _model.img = img; }
+        
+            let texture = this.context.resolve_model(_item.model, "token"); 
+            { _model.prototypeToken.texture.src = texture; }
         }
 
         let folderEntry = this.adventure.folder(_item.helyx.target);
@@ -29426,9 +29454,13 @@ async #import_from_compendium(item_, source_, entity_type_)
 
     async #import_actor(_item)
     {
-        const source = _item.helyx.source(game.system.id);
+        let source = _item.helyx.source(game.system.id);
 
         let model = null;
+        if(source == null)
+        {
+            source = { type: "json", includes: [ this.adventure.datas_directory + "/bestiaries/empty.json" ]};
+        }
         switch(source.type)
         {
             case "compendium": 
@@ -30042,6 +30074,23 @@ export class StateAdventureSummary extends HelyxState
         this.context.accept_tokens_on_maps = $('#helyx-accept-tokens-on-maps').is(':checked');
         Deid.Log.report( 'Tokens on maps used : ' + this.context.accept_tokens_on_maps);
 
+        const adventure_flags = this.context.adventure.flags ?? {};
+        if(adventure_flags.external_mapping)
+        {
+            const model = $('#helyx-external-art-mapping').find(":selected").val();
+            if(game.helyx_externals)
+            if(game.helyx_externals.tokens)
+            if(game.helyx_externals.tokens[model])
+            {
+                this.context.model = model;
+                Deid.Log.report( 'Art Mapping used : ' + game.helyx_externals.tokens[model].name);
+            }
+            else 
+            { this.context.model = null; }
+        }
+        else
+        { this.context.model = null; }
+
         this.#dialog.close();
         this.#dialog = null;
 
@@ -30097,10 +30146,24 @@ export class StateAdventureSummary extends HelyxState
         summary.options = 
         { 
             midjourney_content : adventure_flags.midjourney_content ? "normal" : "none" ,
+            use_external_art_mappings : adventure_flags.external_mapping ? "normal" : "none" ,
             midjourney_content_description : adventure_flags.midjourney_content_description ?? "",
             deidril_maps : adventure_flags.deidril_maps ? "normal" : "none" ,
             tokens_on_maps : adventure_flags.tokens_on_maps ? "normal" : "none"
         };
+
+        if(adventure_flags.external_mapping)
+        if(game.helyx_externals)
+        if(game.helyx_externals.tokens)
+        {
+            summary.options.external_art_mappings = [];
+            for(const name in game.helyx_externals.tokens)
+            {
+                 const collection = game.helyx_externals.tokens[name];
+                 summary.options.external_art_mappings.push( { name: collection.name, idname : name} );
+            }
+        }
+
     }
 
     #dialog_missing_dependencies()
@@ -31147,7 +31210,7 @@ export class HelyxSF2S2E01
 ,{"position":5018,"flags":{"skip":true},"roles":["map"],"index":33}
 ,{"position":6003,"flags":{},"roles":["creature-title"],"index":34}
 ,{"position":6006,"flags":{},"roles":["stat-block","pf2-tags"],"index":35}
-,{"position":6047,"flags":{"glyphs":true},"roles":["stat-block"],"index":36,"glyphs":{"[[reaction]]":"<span class='activity-icon'>R</span>","[reaction]":"<span class='activity-icon'>R</span>","[one-action]":"<span class='activity-icon'>A</span>","[two-actions]":"<span class='activity-icon'>D</span>","[three-actions]":"<span class='activity-icon'>T</span>","[three-actions]]":"<span class='activity-icon'>T</span>","[free-action]":"<span class='activity-icon'>F</span>"}}
+,{"position":6047,"flags":{"glyphs":true},"roles":["stat-block"],"index":36,"glyphs":{"[reaction]":"<span class='action-glyph'>R</span>","[one-action]":"<span class='action-glyph'>1</span>","[two-actions]":"<span class='action-glyph'>2</span>","[three-actions]":"<span class='action-glyph'>3</span>","[three-actions]]":"<span class='action-glyph'>3</span>","[free-action]":"<span class='action-glyph'>F</span>"}}
 ,{"position":7024,"flags":{"skip":true},"roles":["map"],"index":37}
 ,{"position":8079,"flags":{},"roles":["journal-title"],"index":38}
 ,{"position":8106,"flags":{},"roles":["paragraph"],"index":39}
@@ -31175,11 +31238,11 @@ export class HelyxSF2S2E01
     static images = [{"position":{"page":1,"index":67,"x":-1,"y":206},"idname":"cover","target":"assets"}
 ,{"position":{"page":1,"index":1738,"x":-1,"y":147},"idname":"symbol","target":"assets"}
 ,{"position":{"page":3,"index":3232,"x":336,"y":415},"idname":"station","target":"assets"}
-,{"position":{"page":4,"index":3156,"x":-1,"y":26},"idname":"screecher.actor","target":"actors"}
+,{"position":{"page":4,"index":3156,"x":-1,"y":26},"idname":"screecher.actor","target":"actors","tokens":[{"x":375,"y":612,"w":975,"h":975,"idname":"screecher.token","target":"actors","model":"red_sfrpg"}]}
 ,{"position":{"page":5,"index":2861,"x":43,"y":699},"idname":"hall","target":"scenes","transformation":{"rotation":90}}
-,{"position":{"page":6,"index":3799,"x":284,"y":50},"idname":"arvin.actor","target":"actors"}
+,{"position":{"page":6,"index":3799,"x":284,"y":50},"idname":"arvin.actor","target":"actors","tokens":[{"x":373,"y":0,"w":403,"h":403,"idname":"arvin.token","target":"actors","model":"green_sfrpg"}]}
 ,{"position":{"page":7,"index":2888,"x":43,"y":51},"idname":"streets","target":"scenes"}
-,{"position":{"page":9,"index":3500,"x":391,"y":44},"idname":"hound.actor","target":"actors"}
+,{"position":{"page":9,"index":3500,"x":391,"y":44},"idname":"hound.actor","target":"actors","tokens":[{"x":0,"y":496,"w":784,"h":784,"idname":"hound.token","target":"actors","model":"red_sfrpg"}]}
 ];
     static images_files = [ "images" ];
 
@@ -31189,8 +31252,76 @@ export class HelyxSF2S2E01
     static art_map = [];
     static art_map_files = [];
 
-    static import_order = [ "sf2s2e01_cover", "sf2s2e01_adventure", "sf2s2e01_hall", "sf2s2e01_street"];
-    static items = new Map([[ "sf2s2e01_cover" ,{
+    static import_order = [ "sf2s2e01_hound", "sf2s2e01_screecher", "sf2s2e01_charlatan", "sf2s2e01_arvin", "sf2s2e01_cover", "sf2s2e01_adventure", "sf2s2e01_hall", "sf2s2e01_street"];
+    static items = new Map([[ "sf2s2e01_hound" ,{
+	"helyx": {
+		"idname": "sf2s2e01_hound",
+		"type": "Actor",
+		"target": "sf2s2e01_bestiary",
+		"sources": {
+			"sf2e": {
+				"name": "Bloodspawned Hound",
+				"type": "compendium",
+				"compendium": "sf2e.starfinder-society-bestiary"
+			}
+		}
+	},
+	"img": {
+		"src": "{{{imgpath 'hound.actor'}}}"
+	},
+	"token": {
+		"src": "{{{tokenpath 'hound.token'}}}"
+	}
+}]
+,[ "sf2s2e01_screecher" ,{
+	"helyx": {
+		"idname": "sf2s2e01_screecher",
+		"type": "Actor",
+		"target": "sf2s2e01_bestiary",
+		"sources": {
+			"sf2e": {
+				"name": "Bloodspawned Screechers",
+				"type": "compendium",
+				"compendium": "sf2e.starfinder-society-bestiary"
+			}
+		}
+	},
+	"img": {
+		"src": "{{{imgpath 'screecher.actor'}}}"
+	},
+	"token": {
+		"src": "{{{tokenpath 'screecher.token'}}}"
+	}
+}]
+,[ "sf2s2e01_charlatan" ,{
+	"helyx": {
+		"idname": "sf2s2e01_charlatan",
+		"type": "Actor",
+		"target": "sf2s2e01_hazards",
+		"sources": {
+			"sf2e": {
+				"name": "Blood Rend",
+				"type": "compendium",
+				"compendium": "sf2e.starfinder-society-bestiary"
+			}
+		}
+	}
+}]
+,[ "sf2s2e01_arvin" ,{
+	"helyx": {
+		"idname": "sf2s2e01_arvin",
+		"type": "Actor",
+		"target": "sf2s2e01_roleplay_npcs"
+	},
+	"name": "Arvin",
+	"img": {
+		"src": "{{{imgpath 'arvin.actor'}}}"
+	},
+	"token": {
+		"src": "{{{tokenpath 'arvin.token'}}}"
+	}
+}]
+,[ "sf2s2e01_cover" ,{
 	"helyx": {
 		"idname": "sf2s2e01_cover",
 		"type": "JournalEntry",
@@ -31207,6 +31338,39 @@ export class HelyxSF2S2E01
 			"img": {
 				"src": "{{{imgpath 'cover'}}}"
 			}
+		},
+		{
+			"helyx": {
+				"idname": "sf2s2e01_credits",
+				"type": "Page"
+			},
+			"name": "Credits",
+			"blocks": [
+				{
+					"type": "journal-title",
+					"title": "Credits"
+				},
+				{
+					"type": "text",
+					"paragraphs": [
+						"{{{xylf 2 12 687 1 'b'}}} {{{xyl 2 12 677 1}}}",
+						"{{{xylf 2 12 657 1 'b'}}} {{{xyl 2 12 647 1}}}",
+						"{{{xylf 2 12 627 1 'b'}}} {{{xyl 2 12 617 1}}}",
+						"{{{xylf 2 12 597 1 'b'}}} {{{xyl 2 12 587 1}}}",
+						"{{{xylf 2 12 567 1 'b'}}} {{{xyl 2 12 557 1}}}",
+						"{{{xylf 2 12 537 1 'b'}}} {{{xyl 2 12 527 1}}}",
+						"{{{xylf 2 12 507 1 'b'}}} {{{xyl 2 12 497 1}}}",
+						"{{{xylf 2 12 477 1 'b'}}} {{{xyl 2 12 467 1}}} {{{xyl 2 12 457 1}}}",
+						"{{{xylf 2 12 437 1 'b'}}} {{{xyl 2 12 427 1}}}",
+						"{{{xylf 2 12 407 1 'b'}}} {{{xyl 2 12 397 1}}}",
+						"{{{xylf 2 12 377 1 'b'}}} {{{xyl 2 12 367 1}}}",
+						"{{{xylf 2 12 347 1 'b'}}} {{{xyl 2 12 337 1}}}",
+						"{{{xylf 2 12 317 1 'b'}}} {{{xyl 2 12 307 1}}}",
+						"{{{xylf 2 12 287 1 'b'}}} {{{xyl 2 12 277 1}}}",
+						"{{{xylf 2 12 227 1 'b'}}} {{{xyl 2 12 247 1}}}"
+					]
+				}
+			]
 		}
 	]
 }]
@@ -32413,6 +32577,7 @@ export class HelyxSF2S2E01
 ]);
     static itemsFiles =     
     [ 
+        "actors", 
         "journals/00_cover", "journals/01_adventure",
         "scenes/hall", "scenes/street"
     ]; 
@@ -32430,6 +32595,1434 @@ export class HelyxSF2S2E01
 
         // Scenes
         { idname: "sf2s2e01_scenes", name: "SF2S2E01 - {{{xylf 14 269 718 1 'an'}}}", type: "Scene" },  
+
+    ];
+
+    static fixes(str, index)
+    {
+        return str.replace("�", ".").replace("�", ".");
+    }  
+}
+
+
+export class HelyxSF2S2E02
+{
+    static idname = "sf2s2e02";
+    static prefix = "sf2s2e02";
+    static nbPages = 15;
+    static identification = {position : { page: 13, x: 314, y: 75}, value: 'Starfinder  Society  Scenario  #2-02:  Solar  Shake  Up  ' };
+
+    static resources_directories = [ "actors", "scenes", "items", "assets"];
+    static drm = "FREE" ;
+    static system="sf2e";
+    static content = { from: 3, to: 11};
+    static midsize = { odd: 300, even: 300};
+    static language = 'en';
+    static color_assign = "default";
+
+    static flags = 
+    { 
+        midjourney_content: false, 
+        tokens_on_maps: true,
+        skip_pages_without_images: false,
+        art_map: false
+    };
+
+    static summary = 
+    {
+        cover: { image: "cover", x: 0, y: 396, width: 2522, height: 1200 },
+        title: "SF2S2E02 - {{{xylf 13 201 738 1 'an'}}}", 
+        summary: "{{{pxyl 2 224 279 7}}}"
+            
+    };
+
+    static contents = 
+    {
+        pfs_how_to_play: null,
+        front_credits: { locations: { page: 2, bounds: { left: 17, top: 700, right: 300, bottom: 210 } } },
+        credits: { },
+        license: { }
+    };
+
+    static fonts = [{"position":3000,"flags":{"sideblock":true},"roles":["image-name","journal-title"],"index":0}
+,{"position":3002,"flags":{"skip":true},"roles":["page-number"],"index":1}
+,{"position":3003,"flags":{"skip":true},"roles":["author"],"index":2}
+,{"position":3004,"flags":{"skip":true},"roles":["title"],"index":3}
+,{"position":3005,"flags":{"skip":true},"roles":[],"index":4}
+,{"position":3006,"flags":{},"roles":["journal-title"],"index":5}
+,{"position":3007,"flags":{},"roles":["paragraph","stat-block"],"index":6}
+,{"position":3019,"flags":{},"roles":["journal-title"],"index":7}
+,{"position":3024,"flags":{"bold":true},"roles":["paragraph","section","stat-block"],"index":8}
+,{"position":3035,"flags":{"sideblock":true},"roles":["journal-title"],"index":9}
+,{"position":3036,"flags":{"skip":true},"roles":[],"index":10}
+,{"position":3037,"flags":{"italic":true,"sideblock":true},"roles":["paragraph"],"index":11}
+,{"position":3038,"flags":{"sideblock":true},"roles":["paragraph"],"index":12}
+,{"position":3046,"flags":{},"roles":["section"],"index":13}
+,{"position":3074,"flags":{"italic":true},"roles":["paragraph","stat-block"],"index":14}
+,{"position":4002,"flags":{"skip":true},"roles":[],"index":15}
+,{"position":4109,"flags":{"bold":true,"sideblock":true},"roles":["paragraph"],"index":16}
+,{"position":5015,"flags":{},"roles":["read-section"],"index":17}
+,{"position":5063,"flags":{},"roles":["journal-title"],"index":18}
+,{"position":6002,"flags":{"skip":true},"roles":["map"],"index":19}
+,{"position":6003,"flags":{"skip":true},"roles":["map"],"index":20}
+,{"position":6006,"flags":{"skip":true},"roles":["map"],"index":21}
+,{"position":6026,"flags":{"skip":true},"roles":["map"],"index":22}
+,{"position":7001,"flags":{"sideblock":true},"roles":["section"],"index":23}
+,{"position":7030,"flags":{},"roles":["creature-title"],"index":24}
+,{"position":7033,"flags":{},"roles":["stat-block","pf2-tags"],"index":25}
+,{"position":7081,"flags":{"glyphs":true},"roles":["stat-block"],"index":26,"glyphs":{"[reaction]":"<span class='action-glyph'>R</span>","[one-action]":"<span class='action-glyph'>1</span>","[two-actions]":"<span class='action-glyph'>2</span>","[three-actions]":"<span class='action-glyph'>3</span>","[three-actions]]":"<span class='action-glyph'>3</span>","[free-action]":"<span class='action-glyph'>F</span>"}}
+,{"position":11002,"flags":{},"roles":["journal-title"],"index":27}
+,{"position":11003,"flags":{},"roles":["paragraph"],"index":28}
+];
+    static fonts_files = [ "fonts" ];
+
+    static images = [{"position":{"page":1,"index":67,"x":-1,"y":206},"idname":"cover","target":"assets"}
+,{"position":{"page":1,"index":1738,"x":-1,"y":147},"idname":"blood_door","target":"assets"}
+,{"position":{"page":1,"index":1764,"x":191,"y":176},"idname":"phosimplexe.actor","target":"actors","transformation":{"flip":"H"},"tokens":[{"x":0,"y":94,"w":1412,"h":1412,"idname":"phosimplexe.token","target":"actors","model":"red_sfrpg"}]}
+,{"position":{"page":3,"index":3508,"x":471,"y":15},"idname":"alternate_theory","target":"actors","transformation":{"flip":"H"}}
+,{"position":{"page":4,"index":3704,"x":433,"y":74},"idname":"bjovrishe.actor","target":"actors","transformation":{"flip":"H"},"tokens":[{"x":287,"y":42,"w":492,"h":492,"idname":"bjovrishe.token","target":"actors","model":"green_sfrpg"}]}
+,{"position":{"page":5,"index":2936,"x":191,"y":234},"idname":"olrio_dodizan.actor","target":"actors","tokens":[{"x":0,"y":72,"w":930,"h":930,"idname":"olrio_dodizan.token","target":"actors","model":"green_sfrpg"}]}
+,{"position":{"page":6,"index":2898,"x":45,"y":51},"idname":"scene_a","target":"scenes"}
+,{"position":{"page":8,"index":3532,"x":404,"y":26},"idname":"mega_shipbreaker.actor","target":"actors"}
+];
+    static images_files = [ "images" ];
+
+    static scenes_elements = [];
+    static scenes_elements_files = [];
+
+    static art_map = [];
+    static art_map_files = [];
+
+    static import_order = [ "sf2s2e02_phosimplexe", "sf2s2e02_bjovrishe", "sf2s2e02_olrio_dodizan", "sf2s2e02_cover", "sf2s2e02_adventure", "sf2s2e02_ship"];
+    static items = new Map([[ "sf2s2e02_phosimplexe" ,{
+	"helyx": {
+		"idname": "sf2s2e02_phosimplexe",
+		"type": "Actor",
+		"target": "sf2s2e02_bestiary",
+		"sources": {
+			"sf2e": {
+				"name": "Phosimplexe",
+				"type": "compendium",
+				"compendium": "sf2e.starfinder-society-bestiary"
+			}
+		}
+	},
+	"img": {
+		"src": "{{{imgpath 'phosimplexe.actor'}}}"
+	},
+	"token": {
+		"src": "{{{tokenpath 'phosimplexe.token'}}}"
+	}
+}]
+,[ "sf2s2e02_bjovrishe" ,{
+	"helyx": {
+		"idname": "sf2s2e02_bjovrishe",
+		"type": "Actor",
+		"target": "sf2s2e02_roleplay_npcs"
+	},
+	"name": "Bjovrishe",
+	"img": {
+		"src": "{{{imgpath 'bjovrishe.actor'}}}"
+	},
+	"token": {
+		"src": "{{{tokenpath 'bjovrishe.token'}}}"
+	}
+}]
+,[ "sf2s2e02_olrio_dodizan" ,{
+	"helyx": {
+		"idname": "sf2s2e02_olrio_dodizan",
+		"type": "Actor",
+		"target": "sf2s2e02_roleplay_npcs"
+	},
+	"name": "Olrio Dodizan",
+	"img": {
+		"src": "{{{imgpath 'olrio_dodizan.actor'}}}"
+	},
+	"token": {
+		"src": "{{{tokenpath 'olrio_dodizan.token'}}}"
+	}
+}]
+,[ "sf2s2e02_cover" ,{
+	"helyx": {
+		"idname": "sf2s2e02_cover",
+		"type": "JournalEntry",
+		"target": "sf2s2e02_journals"
+	},
+	"name": "00 {{{xylf 13 201 738 1 'an'}}}",
+	"pages": [
+		{
+			"helyx": {
+				"idname": "sf2s2e02_cover_image",
+				"type": "Page"
+			},
+			"name": "Cover [Image]",
+			"img": {
+				"src": "{{{imgpath 'cover'}}}"
+			}
+		}
+	]
+}]
+,[ "sf2s2e02_adventure" ,{
+	"helyx": {
+		"idname": "sf2s2e02_adventure",
+		"type": "JournalEntry",
+		"target": "sf2s2e02_journals"
+	},
+	"name": "01 Adventure",
+	"pages": [
+		{
+			"helyx": {
+				"type": "Page",
+				"idname": "sf2s2e02_003001",
+				"notes": "Where in the Universe?"
+			},
+			"name": "{{{xlf 3034 0 'an'}}}",
+			"blocks": [
+				{
+					"type": "journal-title",
+					"title": "{{{xlf 3034 0 'an'}}}",
+					"cr": ""
+				},
+				{
+					"type": "text",
+					"paragraphs": [
+						"{{{xl 3037 8}}}"
+					]
+				}
+			]
+		},
+		{
+			"helyx": {
+				"type": "Page",
+				"idname": "sf2s2e02_003002",
+				"notes": "Adventure Background"
+			},
+			"name": "{{{xlf 3006 0 'an'}}}",
+			"blocks": [
+				{
+					"type": "journal-title",
+					"title": "{{{xlf 3006 0 'an'}}}"
+				},
+				{
+					"type": "text",
+					"paragraphs": [
+						"{{{xl 3007 8}}}",
+						"{{{xl 3016 2}}}"
+					]
+				}
+			]
+		},
+		{
+			"helyx": {
+				"type": "Page",
+				"idname": "sf2s2e02_003003",
+				"notes": "Getting Started"
+			},
+			"name": "{{{xlf 3019 0 'an'}}}",
+			"blocks": [
+				{
+					"type": "journal-title",
+					"title": "{{{slicexlf 3019 0 'an'}}}"
+				},
+				{
+					"type": "text",
+					"paragraphs": [
+						"{{{xl 3021 9}}}",
+						"{{{xl 3031 3}}}"
+					]
+				},
+				{
+					"type": "section",
+					"section": "development",
+					"title": "{{{xlf 3046 1 'nd'}}}",
+					"blocks": [
+						{
+							"type": "text",
+							"paragraphs": [
+								"{{{xl 3048 4}}}",
+								"{{{xl 3053 4}}}",
+								"{{{xl 3058 3}}}",
+								"{{{xl 3062 5}}}"
+							]
+						}
+					]
+				}
+			]
+		},
+		{
+			"helyx": {
+				"idname": "sf2s2e02_ship_image",
+				"type": "Page"
+			},
+			"name": "{{{xlf 3074 0 'an'}}} [Image]",
+			"img": {
+				"src": "{{{imgpath 'alternate_theory'}}}"
+			}
+		},
+		{
+			"helyx": {
+				"type": "Page",
+				"idname": "sf2s2e02_003004",
+				"notes": "Arrival"
+			},
+			"name": "{{{xlf 3068 0 'an'}}}",
+			"blocks": [
+				{
+					"type": "journal-title",
+					"title": "{{{xlf 3068 0 'an'}}}"
+				},
+				{
+					"type": "text",
+					"paragraphs": [
+						"{{{xl 3070 10}}}"
+					]
+				},
+				{
+					"type": "h1",
+					"title": "{{{xlf 3081 0 'an'}}}"
+				},
+				{
+					"type": "text",
+					"paragraphs": [
+						"{{{xl 3082 6}}}",
+						"{{{xl 4003 2}}}",
+						"{{{xl 4006 2}}}",
+						"{{{xl 4009 2}}}",
+						"{{{xl 4012 3}}}",
+						"{{{xl 4016 2}}}",
+						"{{{xl 4019 4}}}"
+					]
+				},
+				{
+					"type": "section",
+					"section": "development",
+					"title": "{{{xlf 4024 0 'nd'}}}",
+					"blocks": [
+						{
+							"type": "text",
+							"paragraphs": [
+								"{{{xl 4025 3}}}"
+							]
+						}
+					]
+				}
+			]
+		},
+		{
+			"helyx": {
+				"idname": "sf2s2e02_bjovrishe_image",
+				"type": "Page"
+			},
+			"name": "Bjovrishe [Image]",
+			"img": {
+				"src": "{{{imgpath 'bjovrishe.actor'}}}"
+			}
+		},
+		{
+			"helyx": {
+				"type": "Page",
+				"idname": "sf2s2e02_004001",
+				"notes": "The Observers"
+			},
+			"name": "{{{xlf 4029 0 'an'}}}",
+			"blocks": [
+				{
+					"type": "journal-title",
+					"title": "{{{xlf 4029 0 'an'}}}"
+				},
+				{
+					"type": "text",
+					"paragraphs": [
+						"{{{xl 4030 4}}}",
+						"{{{xl 4035 5}}}"
+					]
+				},
+				{
+					"type": "section",
+					"section": "development",
+					"title": "{{{xlf 4041 0 'nd'}}}",
+					"blocks": [
+						{
+							"type": "text",
+							"paragraphs": [
+								"{{{xl 4042 10}}}"
+							]
+						}
+					]
+				},
+				{
+					"type": "text",
+					"paragraphs": [
+						"{{{xl 4053 7}}}"
+					]
+				},
+				{
+					"type": "h1",
+					"title": "{{{xlf 4061 0 'an'}}}"
+				},
+				{
+					"type": "text",
+					"paragraphs": [
+						"{{{xl 4062 25}}}",
+						"{{{xl 4088 5}}}",
+						"{{{xl 4094 3}}}"
+					]
+				},
+				{
+					"type": "section",
+					"section": "treasure",
+					"title": "{{{xlf 4098 0 'nd'}}}",
+					"blocks": [
+						{
+							"type": "text",
+							"paragraphs": [
+								"{{{xl 4099 1}}}{{{xl 5003 1}}}",
+								"{{{xl 5005 2}}}"
+							]
+						}
+					]
+				}
+			]
+		},
+		{
+			"helyx": {
+				"type": "Page",
+				"idname": "sf2s2e02_004002",
+				"notes": "Other Guests"
+			},
+			"name": "{{{xlf 4102 0 'an'}}}",
+			"blocks": [
+				{
+					"type": "journal-title",
+					"title": "{{{xlf 4102 0 'an'}}}"
+				},
+				{
+					"type": "text",
+					"paragraphs": [
+						"{{{xl 4104 3}}}",
+						"{{{xl 4109 2}}}",
+						"{{{xl 4113 2}}}",
+						"{{{xl 4117 2}}}",
+						"{{{xl 4121 3}}}",
+						"{{{xl 4126 3}}}"
+					]
+				}
+			]
+		},
+		{
+			"helyx": {
+				"idname": "sf2s2e02_olrio_image",
+				"type": "Page"
+			},
+			"name": "Olrio Dodizan [Image]",
+			"img": {
+				"src": "{{{imgpath 'olrio_dodizan.actor'}}}"
+			}
+		},
+		{
+			"helyx": {
+				"type": "Page",
+				"idname": "sf2s2e02_005002",
+				"notes": "Flareup Fallout"
+			},
+			"name": "{{{xlf 5008 0 'an'}}}",
+			"blocks": [
+				{
+					"type": "journal-title",
+					"title": "{{{xlf 5008 0 'an'}}}"
+				},
+				{
+					"type": "text",
+					"paragraphs": [
+						"{{{xl 5010 4}}}"
+					]
+				},
+				{
+					"type": "read-section",
+					"paragraphs": [
+						"{{{xl 5015 11}}}",
+						"{{{xl 5027 10}}}",
+						"{{{xl 5038 5}}}"
+					]
+				}
+			]
+		},
+		{
+			"helyx": {
+				"type": "Page",
+				"idname": "sf2s2e02_005002b",
+				"notes": "A. Alternate Theory"
+			},
+			"name": "{{{xlf 5044 0 'an'}}}",
+			"blocks": [
+				{
+					"type": "journal-title",
+					"title": "{{{xlf 5044 0 'an'}}}"
+				},
+				{
+					"type": "text",
+					"paragraphs": [
+						"{{{xl 5045 17}}}"
+					]
+				}
+			]
+		},
+		{
+			"helyx": {
+				"type": "Page",
+				"idname": "sf2s2e02_a01",
+				"notes": "[A01] Bridge"
+			},
+			"name": "{{{xlf 5063 0 'anc'}}}",
+			"blocks": [
+				{
+					"type": "journal-title",
+					"title": "{{{xlf 5063 0 'anc'}}}"
+				},
+				{
+					"type": "text",
+					"paragraphs": [
+						"{{{xl 5064 6}}}",
+						"{{{xl 5071 11}}}",
+						"{{{xl 5083 4}}}",
+						"{{{xl 5088 8}}}",
+						"{{{xl 5097 3}}}",
+						"{{{xl 5101 11}}}",
+						"{{{xl 5113 8}}}"
+					]
+				}
+			]
+		},
+		{
+			"helyx": {
+				"idname": "sf2s2e02_phosimplex_image",
+				"type": "Page"
+			},
+			"name": "Phosimplex [Image]",
+			"img": {
+				"src": "{{{imgpath 'phosimplex.actor'}}}"
+			}
+		},
+		{
+			"helyx": {
+				"type": "Page",
+				"idname": "sf2s2e02_a02",
+				"notes": "[A02] Cantina Low"
+			},
+			"name": "{{{xlf 5122 3 'anc'}}}",
+			"blocks": [
+				{
+					"type": "journal-title",
+					"title": "{{{xlf 5122 3 'anc'}}}",
+					"cr": ""
+				},
+				{
+					"type": "read-section",
+					"paragraphs": [
+						"{{{xl 5126 3}}}"
+					]
+				},
+				{
+					"type": "text",
+					"paragraphs": [
+						"{{{xl 5130 4}}}"
+					]
+				},
+				{
+					"type": "section",
+					"section": "encounter",
+					"title": "{{{xlf 5135 0 'nd'}}}",
+					"blocks": [
+						{
+							"type": "text",
+							"paragraphs": [
+								"{{{xl 5136 0}}}{{{xl 7013 2}}}",
+								"{{{xl 7016 13}}}"
+							]
+						}
+					]
+				},
+				{
+					"type": "section",
+					"section": "balance",
+					"title": "{{{xlf 7002 0 'nd'}}}",
+					"blocks": [
+						{
+							"type": "text",
+							"paragraphs": [
+								"{{{xl 7003 3}}}",
+								"{{{xl 7007 1}}}",
+								"{{{xl 7009 1}}}"
+							]
+						}
+					]
+				},
+				{
+					"type": "creature",
+					"ref": "sf2s2e02_phosimplexe",
+					"statblock": [
+						"{{{pxl 7038 1}}}",
+						"{{{pxl 7040 1}}}",
+						"{{{pxl 7042 11}}}",
+						"{{{pxl 7054 3}}}",
+						"{{{pxl 7058 3}}}{{{hr}}}",
+						"{{{pxl 7062 7}}}",
+						"{{{pxl 7070 7}}}{{{hr}}}",
+						"{{{pxl 7078 1}}}",
+						"{{{pxl 7080 4}}}",
+						"{{{pxl 7085 4}}}",
+						"{{{pxl 7090 6}}}"
+					],
+					"amount": 3,
+					"cr": "{{{xl 7032 0}}}",
+					"tags": "{{{pf2tags 7033 'uncommon' 7034 'size' 7035 'ancestry' 7036 'ancestry' 7037 'ancestry'}}}"
+				}
+			]
+		},
+		{
+			"helyx": {
+				"type": "Page",
+				"idname": "sf2s2e02_a03",
+				"notes": "[A03] Crew Quarters"
+			},
+			"name": "{{{xlf 7097 0 'anc'}}}",
+			"blocks": [
+				{
+					"type": "journal-title",
+					"title": "{{{xlf 7097 0 'anc'}}}"
+				},
+				{
+					"type": "text",
+					"paragraphs": [
+						"{{{xl 7098 2}}}"
+					]
+				}
+			]
+		},
+		{
+			"helyx": {
+				"type": "Page",
+				"idname": "sf2s2e02_a04",
+				"notes": "[A04] Captain’s Quarters"
+			},
+			"name": "{{{xlf 7101 0 'anc'}}}",
+			"blocks": [
+				{
+					"type": "journal-title",
+					"title": "{{{xlf 7101 0 'anc'}}}"
+				},
+				{
+					"type": "text",
+					"paragraphs": [
+						"{{{xl 7102 3}}}"
+					]
+				}
+			]
+		},
+		{
+			"helyx": {
+				"type": "Page",
+				"idname": "sf2s2e02_a05",
+				"notes": "[A05] Washrooms"
+			},
+			"name": "{{{xlf 7106 0 'anc'}}}",
+			"blocks": [
+				{
+					"type": "journal-title",
+					"title": "{{{xlf 7106 0 'anc'}}}"
+				},
+				{
+					"type": "text",
+					"paragraphs": [
+						"{{{xl 7107 4}}}"
+					]
+				}
+			]
+		},
+		{
+			"helyx": {
+				"type": "Page",
+				"idname": "sf2s2e02_a06",
+				"notes": "[A06] Escape Pods"
+			},
+			"name": "{{{xlf 7112 0 'anc'}}}",
+			"blocks": [
+				{
+					"type": "journal-title",
+					"title": "{{{xlf 7112 0 'anc'}}}"
+				},
+				{
+					"type": "text",
+					"paragraphs": [
+						"{{{xl 7113 6}}}"
+					]
+				},
+				{
+					"type": "section",
+					"section": "treasure",
+					"title": "{{{xlf 8014 0 'nd'}}}",
+					"blocks": [
+						{
+							"type": "text",
+							"paragraphs": [
+								"{{{xl 8015 9}}}"
+							]
+						}
+					]
+				}
+			]
+		},
+		{
+			"helyx": {
+				"type": "Page",
+				"idname": "sf2s2e02_a07",
+				"notes": "[A07] Tech Workshop"
+			},
+			"name": "{{{xlf 8025 0 'anc'}}}",
+			"blocks": [
+				{
+					"type": "journal-title",
+					"title": "{{{xlf 8025 0 'anc'}}}"
+				},
+				{
+					"type": "text",
+					"paragraphs": [
+						"{{{xl 8026 1}}}"
+					]
+				},
+				{
+					"type": "section",
+					"section": "treasure",
+					"title": "{{{xlf 8028 0 'nd'}}}",
+					"blocks": [
+						{
+							"type": "text",
+							"paragraphs": [
+								"{{{xl 8029 1}}}"
+							]
+						}
+					]
+				}
+			]
+		},
+		{
+			"helyx": {
+				"type": "Page",
+				"idname": "sf2s2e02_a08",
+				"notes": "[A08] Cargo Bay"
+			},
+			"name": "{{{xlf 8031 0 'anc'}}}",
+			"blocks": [
+				{
+					"type": "journal-title",
+					"title": "{{{xlf 8031 0 'anc'}}}"
+				},
+				{
+					"type": "text",
+					"paragraphs": [
+						"{{{xl 8032 1}}}"
+					]
+				}
+			]
+		},
+		{
+			"helyx": {
+				"type": "Page",
+				"idname": "sf2s2e02_a09",
+				"notes": "[A09] Science Lab"
+			},
+			"name": "{{{xlf 8034 0 'anc'}}}",
+			"blocks": [
+				{
+					"type": "journal-title",
+					"title": "{{{xlf 8034 0 'anc'}}}"
+				},
+				{
+					"type": "text",
+					"paragraphs": [
+						"{{{xl 8035 3}}}"
+					]
+				}
+			]
+		},
+		{
+			"helyx": {
+				"type": "Page",
+				"idname": "sf2s2e02_a10",
+				"notes": "[A10] Starship’s Core Trivial"
+			},
+			"name": "{{{xlf 8039 3 'anc'}}}",
+			"blocks": [
+				{
+					"type": "journal-title",
+					"title": "{{{xlf 8039 3 'anc'}}}"
+				},
+				{
+					"type": "text",
+					"paragraphs": [
+						"{{{xl 8043 4}}}"
+					]
+				},
+				{
+					"type": "read-section",
+					"paragraphs": [
+						"{{{xl 8048 5}}}"
+					]
+				},
+				{
+					"type": "section",
+					"section": "development",
+					"title": "{{{xlf 8054 0 'nd'}}}",
+					"blocks": [
+						{
+							"type": "text",
+							"paragraphs": [
+								"{{{xl 8055 10}}}"
+							]
+						}
+					]
+				},
+				{
+					"type": "section",
+					"section": "balance",
+					"title": "{{{xlf 8003 0 'nd'}}}",
+					"blocks": [
+						{
+							"type": "text",
+							"paragraphs": [
+								"{{{xl 8004 3}}}",
+								"{{{xl 8008 1}}}",
+								"{{{xl 8010 1}}}"
+							]
+						}
+					]
+				},
+				{
+					"type": "hazard",
+					"name": "{{{xlf 8066 3 'tn'}}}",
+					"statblock": [
+						"{{{pxl 8074 1}}}",
+						"{{{pxl 8076 2}}}",
+						"{{{pxl 8079 4}}}",
+						"{{{pxl 8084 19}}}"
+					],
+					"tags": "{{{pf2tags 8070 'uncommon' 8071 'ancestry' 8072 'ancestry' 8073 'ancestry'}}}"
+				},
+				{
+					"type": "section",
+					"section": "treasure",
+					"title": "{{{xlf 9002 0 'nd'}}}",
+					"blocks": [
+						{
+							"type": "text",
+							"paragraphs": [
+								"{{{xl 9003 5}}}"
+							]
+						}
+					]
+				}
+			]
+		},
+		{
+			"helyx": {
+				"type": "Page",
+				"idname": "sf2s2e02_008006",
+				"notes": "To the bridge"
+			},
+			"name": "{{{xlf 9009 0 'anc'}}}",
+			"blocks": [
+				{
+					"type": "journal-title",
+					"title": "{{{xlf 9009 0 'anc'}}}"
+				},
+				{
+					"type": "text",
+					"paragraphs": [
+						"{{{xl 9010 3}}}",
+						"{{{xl 9014 4}}}",
+						"{{{xl 9019 7}}}"
+					]
+				}
+			]
+		},
+		{
+			"helyx": {
+				"idname": "sf2s2e02_shipbreaker_image",
+				"type": "Page"
+			},
+			"name": "Mega Shipbreaker [Image]",
+			"img": {
+				"src": "{{{imgpath 'mega_shipbreaker.actor'}}}"
+			}
+		},
+		{
+			"helyx": {
+				"type": "Page",
+				"idname": "sf2s2e02_009002",
+				"notes": "Emergency Rescue Moderateemergency Rescue Moderate"
+			},
+			"name": "{{{xlf 9027 0 'an'}}}",
+			"blocks": [
+				{
+					"type": "journal-title",
+					"title": "{{{xlf 9027 0 'an'}}}",
+					"cr": "{{{xlf 9028 0 'an'}}}"
+				},
+				{
+					"type": "text",
+					"paragraphs": [
+						"{{{xl 9033 4}}}"
+					]
+				},
+				{
+					"type": "read-section",
+					"paragraphs": [
+						"{{{xl 9038 5}}}",
+						"{{{xl 9044 2}}}"
+					]
+				},
+				{
+					"type": "text",
+					"paragraphs": [
+						"{{{xl 9047 8}}}"
+					]
+				},
+				{
+					"type": "section",
+					"section": "development",
+					"title": "{{{xlf 9056 0 'nd'}}}",
+					"blocks": [
+						{
+							"type": "text",
+							"paragraphs": [
+								"{{{xl 9057 6}}}"
+							]
+						}
+					]
+				},
+				{
+					"type": "section",
+					"section": "development",
+					"title": "{{{xlf 9064 0 'nd'}}}",
+					"blocks": [
+						{
+							"type": "text",
+							"paragraphs": [
+								"{{{xl 9065 7}}}{{{xl 9074 7}}}"
+							]
+						}
+					]
+				},
+				{
+					"type": "creature",
+					"name": "{{{xlf 9082 0 'tn'}}}",
+					"statblock": [
+						"{{{pxl 9087 5}}}",
+						"{{{pxl 9093 3}}}",
+						"{{{hr}}}",
+						"{{{pxl 9097 7}}}",
+						"{{{pxl 9105 3}}}",
+						"{{{pxl 9109 1}}}",
+						"{{{pxl 9111 5}}}",
+						"{{{pxl 9117 3}}}",
+						"{{{hr}}}",
+						"{{{pxl 9121 4}}}",
+						"{{{pxl 9126 4}}}",
+						"{{{pxl 9131 7}}}",
+						"{{{pxl 9139 2}}}",
+						"{{{pxl 10002 2}}}",
+						"{{{pxl 10005 1}}}",
+						"{{{pxl 10007 2}}}",
+						"{{{pxl 10010 8}}}",
+						"{{{pxl 10019 10}}}",
+						"{{{pxl 10030 5}}}",
+						"{{{pxl 10036 7}}}",
+						"{{{hr}}}",
+						"{{{pxl 10044 2}}}",
+						"{{{pxl 10047 1}}}",
+						"{{{pxl 10049 7}}}",
+						"{{{pxl 10057 10}}}",
+						"{{{hr}}}",
+						"{{{pxl 10068 3}}}",
+						"{{{pxl 10072 1}}}",
+						"{{{pxl 10074 1}}}",
+						"{{{pxl 10076 5}}}",
+						"{{{pxl 10082 3}}}",
+						"{{{pxl 10086 5}}}",
+						"{{{hr}}}",
+						"{{{pxl 10097 3}}}",
+						"{{{pxl 10101 1}}}",
+						"{{{pxl 10103 3}}}",
+						"{{{pxl 10107 5}}}",
+						"{{{pxl 10113 3}}}",
+						"{{{pxl 10117 6}}}",
+						"{{{pxl 10124 6}}}",
+						"{{{pxl 10131 4}}}",
+						"{{{hr}}}",
+						"{{{pxl 10136 3}}}"
+					],
+					"cr": "{{{xlf 9084 1 'cr'}}}",
+					"tags": "{{{pf2tags 9086 'ancestry'}}}"
+				}
+			]
+		},
+		{
+			"helyx": {
+				"type": "Page",
+				"idname": "sf2s2e02_009006",
+				"notes": "Conclusion"
+			},
+			"name": "{{{xlf 10140 0 'anc'}}}",
+			"blocks": [
+				{
+					"type": "journal-title",
+					"title": "{{{xlf 10140 0 'anc'}}}"
+				},
+				{
+					"type": "text",
+					"paragraphs": [
+						"{{{xl 10141 2}}}",
+						"{{{xl 10144 9}}}"
+					]
+				},
+				{
+					"type": "section",
+					"section": "development",
+					"title": "{{{xlf 10154 0 'nd'}}}",
+					"blocks": [
+						{
+							"type": "text",
+							"paragraphs": [
+								"{{{xl 10155 2}}}"
+							]
+						}
+					]
+				}
+			]
+		},
+		{
+			"helyx": {
+				"type": "Page",
+				"idname": "sf2s2e02_handout_1",
+				"notes": "Invitation"
+			},
+			"name": "{{{xlf 11002 0 'anc'}}}",
+			"blocks": [
+				{
+					"type": "journal-title",
+					"title": "{{{xlf 11002 0 'anc'}}}"
+				},
+				{
+					"type": "text",
+					"paragraphs": [
+						"{{{xl 11003 0}}}",
+						"{{{xl 11004 3}}}",
+						"{{{xl 11008 2}}}",
+						"{{{xl 11011 0}}}",
+						"{{{xl 11012 0}}}"
+					]
+				}
+			]
+		}
+	]
+}]
+,[ "sf2s2e02_ship" ,{
+	"helyx": {
+		"idname": "sf2s2e02_ship",
+		"target": "sf2s2e02_scenes",
+		"type": "Scene"
+	},
+	"name": "{{{xylf 6 59 671 1 'an'}}}",
+	"includes": [
+		"modules/sf2-pdf-en-import/datas/imports/sf2s2e02/ship.json"
+	],
+	"tokens": [
+		{
+			"helyx": {
+				"idname": "sf2s2e02_phosimplexe",
+				"x": 1600,
+				"y": 1900
+			}
+		},
+		{
+			"helyx": {
+				"idname": "sf2s2e02_phosimplexe",
+				"x": 1800,
+				"y": 2100
+			}
+		},
+		{
+			"helyx": {
+				"idname": "sf2s2e02_phosimplexe",
+				"x": 1900,
+				"y": 1800
+			}
+		}
+	],
+	"notes": [
+		{
+			"helyx": {
+				"idname": "sf2s2e02_a01"
+			},
+			"entryId": "1D87ZA0eHgBi49p8",
+			"pageId": "gFQFauNf4sB5bUrh",
+			"global": false,
+			"levels": [
+				"defaultLevel0000"
+			],
+			"x": 1800,
+			"y": 1350,
+			"elevation": 0,
+			"sort": 0,
+			"iconSize": 40,
+			"texture": {
+				"tint": "#ffffff",
+				"src": "icons/svg/book.svg",
+				"anchorX": 0.5,
+				"anchorY": 0.5,
+				"fit": "contain",
+				"scaleX": 1,
+				"scaleY": 1,
+				"alphaThreshold": 0
+			},
+			"text": "",
+			"fontFamily": "",
+			"fontSize": 32,
+			"textColor": "#ffffff",
+			"textAnchor": 1,
+			"_id": "imQBNLLVCMj1acz6",
+			"locked": false,
+			"flags": {}
+		},
+		{
+			"helyx": {
+				"idname": "sf2s2e02_a02"
+			},
+			"entryId": "1D87ZA0eHgBi49p8",
+			"pageId": "2gsl3bjedLCEDIpW",
+			"global": false,
+			"levels": [
+				"defaultLevel0000"
+			],
+			"x": 1800,
+			"y": 2000,
+			"elevation": 0,
+			"sort": 1,
+			"iconSize": 40,
+			"texture": {
+				"tint": "#ffffff",
+				"src": "icons/svg/book.svg",
+				"anchorX": 0.5,
+				"anchorY": 0.5,
+				"fit": "contain",
+				"scaleX": 1,
+				"scaleY": 1,
+				"alphaThreshold": 0
+			},
+			"text": "",
+			"fontFamily": "",
+			"fontSize": 32,
+			"textColor": "#ffffff",
+			"textAnchor": 1,
+			"_id": "scHiLFSgXBeidRYi",
+			"locked": false,
+			"flags": {}
+		},
+		{
+			"helyx": {
+				"idname": "sf2s2e02_a03"
+			},
+			"entryId": "1D87ZA0eHgBi49p8",
+			"pageId": "BrT6ZbBuc3qiXlaL",
+			"global": false,
+			"levels": [
+				"defaultLevel0000"
+			],
+			"x": 1450,
+			"y": 2600,
+			"elevation": 0,
+			"sort": 2,
+			"iconSize": 40,
+			"texture": {
+				"tint": "#ffffff",
+				"src": "icons/svg/book.svg",
+				"anchorX": 0.5,
+				"anchorY": 0.5,
+				"fit": "contain",
+				"scaleX": 1,
+				"scaleY": 1,
+				"alphaThreshold": 0
+			},
+			"text": "",
+			"fontFamily": "",
+			"fontSize": 32,
+			"textColor": "#ffffff",
+			"textAnchor": 1,
+			"_id": "hyWq8heZpUSBBh7C",
+			"locked": false,
+			"flags": {}
+		},
+		{
+			"helyx": {
+				"idname": "sf2s2e02_a04"
+			},
+			"entryId": "1D87ZA0eHgBi49p8",
+			"pageId": "nN703hGsFwBXE8W4",
+			"global": false,
+			"levels": [
+				"defaultLevel0000"
+			],
+			"x": 2050,
+			"y": 2400,
+			"elevation": 0,
+			"sort": 3,
+			"iconSize": 40,
+			"texture": {
+				"tint": "#ffffff",
+				"src": "icons/svg/book.svg",
+				"anchorX": 0.5,
+				"anchorY": 0.5,
+				"fit": "contain",
+				"scaleX": 1,
+				"scaleY": 1,
+				"alphaThreshold": 0
+			},
+			"text": "",
+			"fontFamily": "",
+			"fontSize": 32,
+			"textColor": "#ffffff",
+			"textAnchor": 1,
+			"_id": "1BA7m7GFS5MSeoyg",
+			"locked": false,
+			"flags": {}
+		},
+		{
+			"helyx": {
+				"idname": "sf2s2e02_a05"
+			},
+			"entryId": "1D87ZA0eHgBi49p8",
+			"pageId": "V9HSAsuA2ROHAdbH",
+			"global": false,
+			"levels": [
+				"defaultLevel0000"
+			],
+			"x": 2000,
+			"y": 2850,
+			"elevation": 0,
+			"sort": 4,
+			"iconSize": 40,
+			"texture": {
+				"tint": "#ffffff",
+				"src": "icons/svg/book.svg",
+				"anchorX": 0.5,
+				"anchorY": 0.5,
+				"fit": "contain",
+				"scaleX": 1,
+				"scaleY": 1,
+				"alphaThreshold": 0
+			},
+			"text": "",
+			"fontFamily": "",
+			"fontSize": 32,
+			"textColor": "#ffffff",
+			"textAnchor": 1,
+			"_id": "sIv2u2kuGsH4DVyd",
+			"locked": false,
+			"flags": {}
+		},
+		{
+			"helyx": {
+				"idname": "sf2s2e02_a06"
+			},
+			"entryId": "1D87ZA0eHgBi49p8",
+			"pageId": "kmATEm4XJRAa4K2g",
+			"global": false,
+			"levels": [
+				"defaultLevel0000"
+			],
+			"x": 2300,
+			"y": 2700,
+			"elevation": 0,
+			"sort": 5,
+			"iconSize": 40,
+			"texture": {
+				"tint": "#ffffff",
+				"src": "icons/svg/book.svg",
+				"anchorX": 0.5,
+				"anchorY": 0.5,
+				"fit": "contain",
+				"scaleX": 1,
+				"scaleY": 1,
+				"alphaThreshold": 0
+			},
+			"text": "",
+			"fontFamily": "",
+			"fontSize": 32,
+			"textColor": "#ffffff",
+			"textAnchor": 1,
+			"_id": "KSVTkSUyvf42kjVn",
+			"locked": false,
+			"flags": {}
+		},
+		{
+			"helyx": {
+				"idname": "sf2s2e02_a07"
+			},
+			"entryId": "1D87ZA0eHgBi49p8",
+			"pageId": "0AIT0unv6CWpZwkA",
+			"global": false,
+			"levels": [
+				"defaultLevel0000"
+			],
+			"x": 1400,
+			"y": 3150,
+			"elevation": 0,
+			"sort": 6,
+			"iconSize": 40,
+			"texture": {
+				"tint": "#ffffff",
+				"src": "icons/svg/book.svg",
+				"anchorX": 0.5,
+				"anchorY": 0.5,
+				"fit": "contain",
+				"scaleX": 1,
+				"scaleY": 1,
+				"alphaThreshold": 0
+			},
+			"text": "",
+			"fontFamily": "",
+			"fontSize": 32,
+			"textColor": "#ffffff",
+			"textAnchor": 1,
+			"_id": "1t7E289W8ABPJ4fx",
+			"locked": false,
+			"flags": {}
+		},
+		{
+			"helyx": {
+				"idname": "sf2s2e02_a08"
+			},
+			"entryId": "1D87ZA0eHgBi49p8",
+			"pageId": "OwoiD4UEqA79HOaA",
+			"global": false,
+			"levels": [
+				"defaultLevel0000"
+			],
+			"x": 1750,
+			"y": 3200,
+			"elevation": 0,
+			"sort": 7,
+			"iconSize": 40,
+			"texture": {
+				"tint": "#ffffff",
+				"src": "icons/svg/book.svg",
+				"anchorX": 0.5,
+				"anchorY": 0.5,
+				"fit": "contain",
+				"scaleX": 1,
+				"scaleY": 1,
+				"alphaThreshold": 0
+			},
+			"text": "",
+			"fontFamily": "",
+			"fontSize": 32,
+			"textColor": "#ffffff",
+			"textAnchor": 1,
+			"_id": "4vyzaNLSMqpjuy5s",
+			"locked": false,
+			"flags": {}
+		},
+		{
+			"helyx": {
+				"idname": "sf2s2e02_a09"
+			},
+			"entryId": "1D87ZA0eHgBi49p8",
+			"pageId": "LdJEvAgccU0Lf3TI",
+			"global": false,
+			"levels": [
+				"defaultLevel0000"
+			],
+			"x": 2200,
+			"y": 3150,
+			"elevation": 0,
+			"sort": 8,
+			"iconSize": 40,
+			"texture": {
+				"tint": "#ffffff",
+				"src": "icons/svg/book.svg",
+				"anchorX": 0.5,
+				"anchorY": 0.5,
+				"fit": "contain",
+				"scaleX": 1,
+				"scaleY": 1,
+				"alphaThreshold": 0
+			},
+			"text": "",
+			"fontFamily": "",
+			"fontSize": 32,
+			"textColor": "#ffffff",
+			"textAnchor": 1,
+			"_id": "XBWmLeN5IVSz5O0B",
+			"locked": false,
+			"flags": {}
+		},
+		{
+			"helyx": {
+				"idname": "sf2s2e02_a10"
+			},
+			"entryId": "1D87ZA0eHgBi49p8",
+			"pageId": "LnJxjETbejJfGjI5",
+			"global": false,
+			"levels": [
+				"defaultLevel0000"
+			],
+			"x": 1800,
+			"y": 3450,
+			"elevation": 0,
+			"sort": 9,
+			"iconSize": 40,
+			"texture": {
+				"tint": "#ffffff",
+				"src": "icons/svg/book.svg",
+				"anchorX": 0.5,
+				"anchorY": 0.5,
+				"fit": "contain",
+				"scaleX": 1,
+				"scaleY": 1,
+				"alphaThreshold": 0
+			},
+			"text": "",
+			"fontFamily": "",
+			"fontSize": 32,
+			"textColor": "#ffffff",
+			"textAnchor": 1,
+			"_id": "Pnd7cI8PpkjPJMcK",
+			"locked": false,
+			"flags": {}
+		}
+	]
+}]
+]);
+    static itemsFiles =     
+    [ 
+        "actors", 
+        "journals/00_cover", "journals/01_adventure",
+        "scenes/ship"
+    ]; 
+
+    static folders = 
+    [ 
+        // journals
+        { idname: "sf2s2e02_journals", name: "SF2S2E02 - {{{xylf 13 201 738 1 'an'}}}", type: "JournalEntry" },
+
+        // Actors
+        { idname: "sf2s2e02_actors", name: "SF2S2E02 - {{{xylf 13 201 738 1 'an'}}}", type: "Actor" },     
+        { idname: "sf2s2e02_bestiary", name: "Bestiary", parent: "sf2s2e02_actors" },  
+        { idname: "sf2s2e02_hazards", name: "Hazards", parent: "sf2s2e02_actors" },    
+        { idname: "sf2s2e02_roleplay_npcs", name: "Roleplay NPCs", parent: "sf2s2e02_actors" },      
+
+        // Scenes
+        { idname: "sf2s2e02_scenes", name: "SF2S2E02 - {{{xylf 13 201 738 1 'an'}}}", type: "Scene" },  
 
     ];
 
@@ -32458,6 +34051,7 @@ constructor()
         this.adventures.push(new HelyxAdventure (this, {descriptor: HelyxSF2S1E03, idname: "sf2s1e03", datas_directory: "modules/sf2-pdf-en-import/datas", shared_resources_directory: "modules/sf2-pdf-en-import/datas", origin: "sf2-pdf-en-import", export_directory: "sf2s1e03"}));
         this.adventures.push(new HelyxAdventure (this, {descriptor: HelyxSF2S1E14, idname: "sf2s1e14", datas_directory: "modules/sf2-pdf-en-import/datas", shared_resources_directory: "modules/sf2-pdf-en-import/datas", origin: "sf2-pdf-en-import", export_directory: "sf2s1e14"}));
         this.adventures.push(new HelyxAdventure (this, {descriptor: HelyxSF2S2E01, idname: "sf2s2e01", datas_directory: "modules/sf2-pdf-en-import/datas", shared_resources_directory: "modules/sf2-pdf-en-import/datas", origin: "sf2-pdf-en-import", export_directory: "sf2s2e01"}));
+        this.adventures.push(new HelyxAdventure (this, {descriptor: HelyxSF2S2E02, idname: "sf2s2e02", datas_directory: "modules/sf2-pdf-en-import/datas", shared_resources_directory: "modules/sf2-pdf-en-import/datas", origin: "sf2-pdf-en-import", export_directory: "sf2s2e02"}));
         
 
     

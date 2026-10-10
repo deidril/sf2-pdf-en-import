@@ -14,7 +14,7 @@
         "flags": {}
       }
     ],
-    "version": "7.03",
+    "version": "7.04",
     "compatibility": { "minimum": "14", "verified": "14", "maximum": "14.999" },
   "styles": [
     "css/common/dialogs.css", "css/common/helyx.css", "css/common/helyx-conversions.css", "css/common/helyx-sections.css", 
@@ -25,7 +25,7 @@
     {
         "systems": 
         [
-          { "id": "sf2e", "type": "system", "compatibility": { "minimum": "1.4.0", "verified": "1.4.0" } }
+          { "id": "sf2e", "type": "system", "compatibility": { "minimum": "1.6.0", "verified": "1.6.0" } }
        ]
     },
     "esmodules": [
@@ -43,6 +43,6 @@
     ],
 
     "url": "https://github.com/deidril/sf2-pdf-en-import",
-    "manifest": "https://github.com/deidril/sf2-pdf-en-import/releases/download/7.03/module.json",
-    "download": "https://github.com/deidril/sf2-pdf-en-import/releases/download/7.03/sf2-pdf-en-import-7.03.zip"
+    "manifest": "https://github.com/deidril/sf2-pdf-en-import/releases/download/7.04/module.json",
+    "download": "https://github.com/deidril/sf2-pdf-en-import/releases/download/7.04/sf2-pdf-en-import-7.04.zip"
   }
