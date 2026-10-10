@@ -1,6 +1,9 @@
 {
-  "name": "Commoner",
+  "name": "empty",
   "type": "npc",
+  "ownership": {
+    "default": 0
+  },
   "prototypeToken": {
     "flags": {
       "sf2e": {
@@ -10,19 +13,17 @@
     },
     "height": 1,
     "width": 1,
-    "name": "Commoner",
+    "name": "empty",
     "displayName": 20,
     "actorLink": false,
+    "depth": 1,
     "texture": {
       "src": "systems/sf2e/icons/default-icons/npc.svg",
       "anchorX": 0.5,
       "anchorY": 0.5,
-      "offsetX": 0,
-      "offsetY": 0,
       "fit": "contain",
       "scaleX": 1,
       "scaleY": 1,
-      "rotation": 0,
       "tint": "#ffffff",
       "alphaThreshold": 0.75
     },
@@ -73,7 +74,7 @@
       "saturation": 0,
       "contrast": 0
     },
-    "detectionModes": [],
+    "detectionModes": {},
     "occludable": {
       "radius": 0
     },
@@ -145,7 +146,7 @@
     },
     "resources": {},
     "_migration": {
-      "version": 0.954,
+      "version": 0.959,
       "previous": null
     },
     "abilities": {
@@ -202,23 +203,20 @@
   "folder": null,
   "flags": {},
   "_stats": {
+    "coreVersion": "14.365",
+    "systemId": "sf2e",
+    "systemVersion": "1.5.0",
+    "createdTime": 1788466835202,
+    "modifiedTime": 1788466835204,
+    "lastModifiedBy": "jw9QYqfpaVAc799m",
     "compendiumSource": null,
     "duplicateSource": null,
     "exportSource": {
-      "worldId": "devsf2",
-      "uuid": "Actor.HuQsonInBK71zgKc",
-      "coreVersion": "13.351",
+      "worldId": "dev-sf2",
+      "uuid": "Actor.pA2xi0ieheUPib9b",
+      "coreVersion": "14.365",
       "systemId": "sf2e",
-      "systemVersion": "0.0.4"
-    },
-    "coreVersion": "13.351",
-    "systemId": "sf2e",
-    "systemVersion": "0.0.4",
-    "createdTime": 1772367971754,
-    "modifiedTime": 1772367971754,
-    "lastModifiedBy": "HRqg5OqczPFz7FUx"
-  },
-  "ownership": {
-    "default": 0
+      "systemVersion": "1.5.0"
+    }
   }
 }
